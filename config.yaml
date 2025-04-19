@@ -1,0 +1,12 @@
+# Gut Punch Global Config Example
+
+database:
+  file: "./gut-punch.db"
+
+queues:
+  default:
+    priority: 1
+  critical:
+    priority: 10
+
+jobsDirectory: "built-jobs"

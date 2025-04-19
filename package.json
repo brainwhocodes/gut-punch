@@ -1,0 +1,56 @@
+{
+  "name": "gut-punch",
+  "version": "0.1.0",
+  "description": "Class-first, modular job scheduler for Node.js (TypeScript)",
+  "main": "dist/index.js",
+  "bin": {
+    "gutpunch": "src/cli.ts"
+  },
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "cli:list-jobs": "node dist/cli.js list-jobs",
+    "cli:list-queues": "node dist/cli.js list-queues",
+    "cli:upcoming": "node dist/cli.js upcoming",
+    "cli:run": "node dist/cli.js run",
+    "build:jobs": "tsc -p tsconfig.jobs.json",
+    "build": "pnpm run build:jobs && tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:push": "drizzle-kit push",
+    "db:migrate": "drizzle-kit migrate"
+  },
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "better-sqlite3": "^11.9.1",
+    "drizzle-orm": "^0.42.0",
+    "sqlite3": "^5.1.7",
+    "yaml": "^2.7.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/jest": "^29.5.14",
+    "drizzle-kit": "^0.31.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.3.2",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.3"
+  },
+  "jest": {
+    "preset": "ts-jest",
+    "testEnvironment": "node",
+    "roots": [
+      "<rootDir>/test"
+    ]
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "packageManager": "pnpm@10.6.3+sha512.bb45e34d50a9a76e858a95837301bfb6bd6d35aea2c5d52094fa497a467c43f5c440103ce2511e9e0a2f89c3d6071baac3358fc68ac6fb75e2ceb3d2736065e6",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3"
+    ]
+  }
+}

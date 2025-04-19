@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json", // Inherit base settings
+  "compilerOptions": {
+    "outDir": "./built-jobs", // Output compiled JS jobs here
+    "rootDir": ".",        // Root for input files (src/jobs)
+    "declaration": false,  // No declaration files needed for runtime jobs
+    "sourceMap": true,     // Enable source maps for job builds
+    "noEmit": false        // Ensure files are actually emitted
+  },
+  "include": ["src/jobs/**/*.ts"], // Only compile files in src/jobs
+  "exclude": []
+}
