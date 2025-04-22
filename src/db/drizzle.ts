@@ -5,6 +5,7 @@ import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { eq, sql } from "drizzle-orm";
 import { jobs, scheduledJobs, jobRuns } from "./schema";
+import type { JobStatus } from "./types";
 
 /**
  * Create and export Drizzle DB instance using better-sqlite3.
@@ -33,7 +34,7 @@ export interface JobRunRecord {
 export interface JobRecord {
   job_name: string;
   /** Optional initial status */
-  status?: string;
+  status?: JobStatus;
   /** Optional automatic reschedule flag */
   reschedule?: boolean;
   /** Optional automatic reschedule delay (ms) */
@@ -47,7 +48,7 @@ export interface ScheduledJobRecord {
 
 export interface JobDefinitionRecord {
   job_name: string;
-  status: string;
+  status: JobStatus;
   reschedule: boolean;
   reschedule_in: number | null;
 }
@@ -88,15 +89,40 @@ export class JobDb {
     console.log(`[DB] Updated job run id ${id}`);
   }
 
-  /** Insert a job definition if it doesn't exist. */
   /**
-   * Insert a job definition if it doesn't exist.
-   * @param job JobRecord
+   * Inserts a new job definition into the database.
+   * If a job with the same name already exists, it does nothing.
    */
-  public async insertJob(job: JobRecord): Promise<void> {
-    console.log(`[DB] Inserting job definition:`, job);
+  public async insertJobDefinition(job: JobDefinitionRecord): Promise<void> {
+    console.log("[DB] Inserting job definition:", job);
     await this.db.insert(jobs).values(job).onConflictDoNothing();
-    console.log(`[DB] Inserted job definition:`, job.job_name);
+    console.log(`[DB] Inserted job definition: ${job.job_name}`);
+  }
+
+  /**
+   * Inserts a new job definition or updates an existing one based on job_name.
+   * Updates status, reschedule, and reschedule_in fields on conflict.
+   */
+  public async upsertJobDefinition(job: JobDefinitionRecord): Promise<void> {
+    console.log("[DB] Upserting job definition:", job);
+    await this.db.insert(jobs).values(job).onConflictDoUpdate({
+      target: jobs.job_name, // Conflict target
+      set: { // Fields to update on conflict
+        status: job.status, // Reset status on load
+        reschedule: job.reschedule,
+        reschedule_in: job.reschedule_in,
+        // Do not update last_run_at here
+      },
+    });
+    console.log(`[DB] Upserted job definition: ${job.job_name}`);
+  }
+
+  /**
+   * Updates the status of a specific job definition.
+   */
+  public async updateJobDefinitionStatus(jobName: string, status: JobStatus): Promise<void> {
+    console.log(`[DB] Updating job definition status for ${jobName} to ${status}`);
+    await this.db.update(jobs).set({ status }).where(eq(jobs.job_name, jobName));
   }
 
   /** Upsert a scheduled job (insert or update next_run). */
@@ -153,12 +179,6 @@ export class JobDb {
     console.log(`[DB] Removing scheduled job: ${jobName}`);
     await this.db.delete(scheduledJobs).where(eq(scheduledJobs.job_name, jobName));
     console.log(`[DB] Removed scheduled job: ${jobName}`);
-  }
-
-  /** Update a job definition's status in the jobs table. */
-  public async updateJobDefinitionStatus(jobName: string, status: string): Promise<void> {
-    console.log(`[DB] Updating job definition status for ${jobName} to ${status}`);
-    await this.db.update(jobs).set({ status }).where(eq(jobs.job_name, jobName));
   }
 
   /** Get a job definition record from the jobs table. */

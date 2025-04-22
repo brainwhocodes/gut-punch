@@ -13,10 +13,12 @@ export const jobRuns = sqliteTable("job_runs", {
 });
 
 export const jobs = sqliteTable("jobs", {
-  job_name: text("job_name").primaryKey(),
-  status: text("status").notNull().default("pending"), // pending, running, completed, failed
+  id: integer("id").primaryKey(),
+  job_name: text("job_name").notNull().unique(),
+  status: text("status", { enum: ["pending", "active", "disabled"] }).notNull().default("pending"), // Add status column
   reschedule: integer("reschedule", { mode: "boolean" }).notNull().default(false),
-  reschedule_in: integer("reschedule_in"), // in milliseconds
+  reschedule_in: integer("reschedule_in"), // Milliseconds, nullable
+  last_run_at: integer("last_run_at", { mode: "timestamp_ms" }),
 });
 
 export const scheduledJobs = sqliteTable("scheduled_jobs", {

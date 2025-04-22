@@ -5,44 +5,44 @@
  *
  * @packageDocumentation
  */
-import { GutPunch } from "./index";
-import { Scheduler } from "./core/scheduler";
+import { GutPunch, Scheduler } from "./index";
 import { Job } from "./core/types";
 import { PriorityQueue } from "./core/queue";
-import * as readline from "readline";
+import { Command } from "commander";
 
 /**
- * CLI entry point.
+ * CLI entry point using Commander
+ * @returns {Promise<void>} Completion promise
  */
 async function main(): Promise<void> {
-  const args: string[] = process.argv.slice(2);
-  const scheduler: Scheduler = new Scheduler();
-  await scheduler["ensureSchema"]();
-  await scheduler["loadJobs"]();
+  console.log("[CLI] Starting main function...");
+  const program: Command = new Command();
+  program
+    .name('gutpunch')
+    .description('Class-first, modular job scheduler for Node')
+    .version('0.1.0');
+  program.option('-c, --config <path>', 'Path to YAML config file', 'config.yaml');
+  program
+    .command('list-jobs')
+    .description('List all loaded jobs')
+    .action(() => handleListJobs(program.opts().config));
 
-  if (args.length === 0 || args[0] === "help") {
-    printHelp();
-    return;
-  }
+  program
+    .command('list-queues')
+    .description('List all queues and their job counts')
+    .action(() => handleListQueues(program.opts().config));
 
-  switch (args[0]) {
-    case "list-jobs":
-      await listJobs(scheduler);
-      break;
-    case "list-queues":
-      await listQueues(scheduler);
-      break;
-    case "upcoming":
-      await listUpcoming(scheduler);
-      break;
-    case "run":
-      await runScheduler();
-      break;
-    default:
-      console.error(`Unknown command: ${args[0]}`);
-      printHelp();
-      process.exit(1);
-  }
+  program
+    .command('upcoming')
+    .description('List upcoming jobs (next run date)')
+    .action(() => handleListUpcoming(program.opts().config));
+
+  program
+    .command('run')
+    .description('Run the scheduler as a process')
+    .action(() => handleRunScheduler(program.opts().config));
+
+  await program.parseAsync(process.argv);
 }
 
 /**
@@ -77,42 +77,72 @@ async function listJobs(scheduler: Scheduler): Promise<void> {
 /**
  * List all queues and their job counts.
  */
-async function listQueues(scheduler: Scheduler): Promise<void> {
+/**
+ * Handler for the 'list-queues' command.
+ * @param {string} configPath - Path to YAML config file
+ * @returns {Promise<void>} Completion promise
+ */
+async function handleListQueues(configPath: string): Promise<void> {
+  const scheduler: Scheduler = new Scheduler(configPath);
+  await scheduler["ensureSchema"]();
+  await scheduler["loadJobs"]();
   const queues: Record<string, PriorityQueue> = (scheduler as any).queues;
   console.log("Queues:");
-  for (const [name, queue] of Object.entries(queues)) {
-    console.log(`- ${name}: ${queue.size()} jobs`);
-  }
+  for (const [name, queue] of Object.entries(queues)) { console.log(`- ${name}: ${queue.size()} jobs`); }
 }
 
 /**
  * List upcoming jobs and their next run date.
  */
-async function listUpcoming(scheduler: Scheduler): Promise<void> {
+/**
+ * Handler for the 'upcoming' command.
+ * @param {string} configPath - Path to YAML config file
+ * @returns {Promise<void>} Completion promise
+ */
+async function handleListUpcoming(configPath: string): Promise<void> {
+  const scheduler: Scheduler = new Scheduler(configPath);
+  await scheduler["ensureSchema"]();
+  await scheduler["loadJobs"]();
   const db = (scheduler as any).db;
-  const rows = await db.getAllScheduledJobs();
-  if (rows.length === 0) {
-    console.log("No scheduled jobs found.");
-    return;
-  }
+  const rows = await db.getDueScheduledJobs(new Date().toISOString());
+  if (!rows || rows.length === 0) { console.log("No upcoming jobs."); return; }
   console.log("\n--- Upcoming Jobs ---");
-  for (const { job_name, next_run } of rows) {
-    console.log(`- ${job_name}: next at ${next_run}`);
-  }
+  for (const { job_name, next_run } of rows) { console.log(`- ${job_name}: next at ${next_run}`); }
+}
+
+/**
+ * Handler for the 'list-jobs' command.
+ * @param {string} configPath - Path to YAML config file
+ * @returns {Promise<void>} Completion promise
+ */
+async function handleListJobs(configPath: string): Promise<void> {
+  const scheduler: Scheduler = new Scheduler(configPath);
+  await scheduler["ensureSchema"]();
+  await scheduler["loadJobs"]();
+  const jobsDict: Record<string, Job> = (scheduler as any).jobs;
+  const jobNames: string[] = Object.keys(jobsDict);
+  if (jobNames.length === 0) { console.log("No jobs loaded."); return; }
+  console.log("\n--- Loaded Jobs ---");
+  for (const name of jobNames) { console.log(`- ${name}`); }
 }
 
 /**
  * Run the scheduler as a process (blocks and runs jobs).
  */
-async function runScheduler(): Promise<void> {
-  const gutPunch: GutPunch = new GutPunch();
+/**
+ * Handler for the 'run' command.
+ * @param {string} configPath - Path to YAML config file
+ * @returns {Promise<void>} Completion promise
+ */
+async function handleRunScheduler(configPath: string): Promise<void> {
+  const gutPunch: GutPunch = new GutPunch(configPath);
   await gutPunch.start();
   console.log("GutPunch scheduler started. Press Ctrl+C to exit.");
   // Keep process alive
-  readline.createInterface({ input: process.stdin, output: process.stdout });
+  process.stdin.resume();
 }
 
 main().catch((err) => {
-  console.error("CLI Error:", err);
+  console.error("[CLI] Unhandled error:", err);
   process.exit(1);
 });

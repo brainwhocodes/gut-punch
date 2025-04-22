@@ -1,7 +1,7 @@
 /**
  * JobRunner: Executes jobs and handles retries/backoff.
  */
-import type { Job, JobResult } from "./types";
+import type { Job, JobResult } from "./types.js";
 
 /**
  * JobRunner class for Gut Punch.

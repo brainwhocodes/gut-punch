@@ -5,7 +5,7 @@
 /**
  * Job status enumeration.
  */
-export enum JobStatus {
+export enum JobRunStatus {
   Pending = "pending",
   Running = "running",
   Success = "success",
@@ -35,7 +35,7 @@ export interface Job {
  * Result of a job run.
  */
 export interface JobResult {
-  status: JobStatus;
+  status: JobRunStatus;
   output?: unknown;
   error?: string;
 }
@@ -44,3 +44,8 @@ export interface JobResult {
  * Backoff strategy type.
  */
 export type BackoffStrategy = "exponential" | "linear" | "none";
+
+/**
+ * Represents the persistent status of a job definition in the database.
+ */
+export type JobStatus = "pending" | "active" | "disabled";

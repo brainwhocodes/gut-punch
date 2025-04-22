@@ -2,9 +2,9 @@
  * Example job class for Gut Punch.
  */
 import type { JobResult, BackoffStrategy } from "../core/types";
-import { JobStatus } from "../core/types";
+import { JobRunStatus } from "../core/types";
 import { BaseJob } from "../core/base-job";
-import { GutPunchConfig } from "../config";
+import { GutPunchConfig } from "../config/index";
 import { JobDb } from "../db/drizzle";
 
 /**
@@ -17,7 +17,7 @@ export class ExampleJob extends BaseJob {
   /** Automatically reschedule every hour */
   public readonly reschedule: boolean = true;
   /** Delay before rescheduling (ms) */
-  public readonly rescheduleIn: number = 1000 * 60 * 60;
+  public readonly rescheduleIn: number = 1000 * 3;
 
   constructor(config: GutPunchConfig, db: JobDb) {
     super(config, db);
@@ -27,6 +27,9 @@ export class ExampleJob extends BaseJob {
     const now = new Date().toISOString();
     const message = `ExampleJob ran at ${now}`;
     console.log(message);
-    return { status: JobStatus.Success, output: message };
+    return {
+      status: JobRunStatus.Success,
+      output: { message: "Example job finished successfully!" },
+    };
   }
 }

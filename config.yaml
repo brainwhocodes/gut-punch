@@ -9,4 +9,4 @@ queues:
   critical:
     priority: 10
 
-jobsDirectory: "built-jobs"
+jobsDirectory: "dist/jobs"

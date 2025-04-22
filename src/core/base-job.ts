@@ -1,6 +1,6 @@
-import { Job, JobResult, JobStatus, BackoffStrategy } from "./types";
-import { GutPunchConfig } from "../config"; // Correct import path
-import { JobDb } from "../db/drizzle"; // Use JobDb from drizzle
+import { Job, JobResult, BackoffStrategy } from "./types.js";
+import { GutPunchConfig } from "../config/index.js"; // Correct import path
+import { JobDb } from "../db/drizzle.js"; // Use JobDb from drizzle
 
 /**
  * Abstract base class for all jobs.

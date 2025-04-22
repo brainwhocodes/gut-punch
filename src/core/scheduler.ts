@@ -1,17 +1,25 @@
 /**
  * Scheduler: Loads jobs, manages queues, and schedules execution.
  */
-import { readdirSync, existsSync } from "fs";
-import { join, resolve } from "path";
-import { pathToFileURL } from "url";
-import { loadConfig, GutPunchConfig } from "../config";
-import { JobDb, JobRunRecord } from "../db/drizzle";
+import { readdirSync, existsSync } from "node:fs"; // Use node: prefix
+import { join, resolve } from "node:path"; // Use node: prefix
+import { pathToFileURL } from "node:url"; // Use node: prefix
+import { loadConfig, GutPunchConfig } from "../config/index";
+import { JobDb } from "../db/drizzle";
 
-import { PriorityQueue, QueueItem } from "./queue";
-import type { Job } from "./types"; 
-import { JobStatus } from "./types";
-import { BaseJob } from "./base-job"; 
-import { sql } from "drizzle-orm";
+import { PriorityQueue } from "./queue";
+import { BaseJob } from "./base-job";
+
+/**
+ * Local constant for job run statuses to avoid enum import issues.
+ */
+const JOB_RUN_STATUS = {
+  Pending: "pending",
+  Running: "running",
+  Success: "success",
+  Failed: "failed",
+  Retrying: "retrying"
+} as const;
 
 /**
  * Queue priorities (lower is higher priority)
@@ -31,15 +39,24 @@ export class Scheduler {
   private readonly queues: Record<string, PriorityQueue> = {};
   private readonly jobs: Record<string, BaseJob> = {};
 
-  constructor() {
-    this.config = loadConfig();
-    this.db = new JobDb(this.config.database.file);
-    // Ensure default queues
-    for (const [name, priority] of Object.entries(QUEUE_PRIORITIES)) {
-      this.queues[name] = new PriorityQueue();
-      if (!this.config.queues[name]) {
-        this.config.queues[name] = { priority };
+  constructor(configPath: string = "config.yaml") {
+    console.log(`[Scheduler] Initializing with config path: ${configPath}`);
+    try {
+      this.config = loadConfig(configPath); // Load config first
+      this.db = new JobDb(this.config.database.file); // Initialize DB
+      // Ensure default queues
+      for (const [name, priority] of Object.entries(QUEUE_PRIORITIES)) {
+        this.queues[name] = new PriorityQueue();
+        if (!this.config.queues[name]) {
+          this.config.queues[name] = { priority };
+        }
       }
+      console.log(`[Scheduler] Initialization complete.`);
+    } catch (error: any) {
+      console.error(`[Scheduler] FATAL: Initialization failed: ${error.message}`);
+      // Optionally re-throw or exit process if initialization is critical
+      // throw error; 
+      process.exit(1); // Exit if scheduler cannot initialize
     }
   }
 
@@ -67,26 +84,42 @@ export class Scheduler {
    * Dynamically load all job classes from the jobs directory.
    */
   private async loadJobs(): Promise<void> {
-    const baseJobsDir = resolve(this.config.jobsDirectory);
-    const jobsDir = join(baseJobsDir, 'src', 'jobs'); // Adjust path based on tsconfig.jobs.json rootDir/outDir
+    // Resolve the directory where Vite outputs the bundled job files
+    const jobsDir: string = resolve(this.config.jobsDirectory);
+    console.log(`[Scheduler] Attempting to load jobs from configured directory: ${this.config.jobsDirectory}, resolved to: ${jobsDir}`);
+
     if (!existsSync(jobsDir)) {
-      console.warn(`[Scheduler] Jobs directory not found: ${jobsDir}. No jobs loaded.`)
-      return;
-    }
-    const files = readdirSync(jobsDir).filter(f => f.endsWith(".js"));
-    console.log(`[Scheduler] Found ${files.length} potential job files in ${jobsDir}:`, files);
-
-    if (files.length === 0) {
-      return; // Exit early if no files found
+      console.log(`[Scheduler] Jobs directory not found: ${jobsDir}`);
+      return; // No jobs to load
     }
 
-    for (const file of files) {
-      console.log(`[Scheduler] Attempting to load module: ${join(jobsDir, file)}`);
-      const fullPath = join(jobsDir, file);
+    console.log(`[Scheduler] Jobs directory found: ${jobsDir}`);
+
+    // Read files directly from the resolved jobs directory
+    const files: string[] = readdirSync(jobsDir);
+    console.log(`[Scheduler] Files in jobs directory: ${files.join(', ')}`);
+
+    // Filter for .cjs files, excluding source maps
+    const jobFiles: string[] = files.filter(
+      (file: string) => file.endsWith(".cjs") && !file.endsWith(".map")
+    );
+    console.log(
+      `[Scheduler] Filtered CJS job files: ${jobFiles.join(', ') || 'None'}`
+    );
+
+    if (jobFiles.length === 0) {
+      console.log(`[Scheduler] No job files (.cjs) found in ${jobsDir}.`);
+      return; // No jobs to load
+    }
+
+    for (const file of jobFiles) {
+      const filePath: string = join(jobsDir, file);
+      console.log(`[Scheduler] Attempting to load job from file: ${filePath}`);
       try {
-        console.log(`[Scheduler] Loading module: ${fullPath}`);
         // Use pathToFileURL().href for cross-platform compatibility with dynamic import
-        const jobModule = await import(pathToFileURL(fullPath).href);
+        const moduleUrl = pathToFileURL(filePath).href;
+        console.log(`[Scheduler] Loading module URL: ${moduleUrl}`);
+        const jobModule = await import(moduleUrl);
         console.log(`[Scheduler] Successfully imported module: ${file}`);
 
         let JobClass: any = undefined;
@@ -109,33 +142,38 @@ export class Scheduler {
         if (foundJobExport && JobClass) {
           console.log(`[Scheduler] Instantiating job: ${file}`);
           const jobInstance = new JobClass(this.config, this.db) as BaseJob;
-          this.jobs[jobInstance.name] = jobInstance;
-          console.log(`[Scheduler] Successfully loaded and instantiated job: ${jobInstance.name}`);
-          // Persist job definition
-          console.log(`[Scheduler] Persisting job definition to DB: ${jobInstance.name}`);
-          await this.db.insertJob({
-            job_name: jobInstance.name,
-            status: JobStatus.Pending,
+          const jobName = jobInstance.name; // Get name from instance
+          if (!jobName) {
+             console.warn(`[Scheduler] Job loaded from ${file} does not have a 'name' property.`);
+             continue;
+          }
+          this.jobs[jobName] = jobInstance;
+          console.log(`[Scheduler] Successfully loaded and instantiated job: ${jobName}`);
+          // Upsert job definition (insert or update)
+          console.log(`[Scheduler] Upserting job definition in DB: ${jobName}`);
+          await this.db.upsertJobDefinition({
+            job_name: jobName,
+            status: JOB_RUN_STATUS.Pending, // Use local constant
             reschedule: jobInstance.reschedule ?? false,
             reschedule_in: jobInstance.rescheduleIn ?? null,
           });
-          console.log(`[Scheduler] Persisted job definition to DB: ${jobInstance.name}`);
+          console.log(`[Scheduler] Upserted job definition in DB: ${jobName}`);
           // Initial scheduling based on reschedule/rescheduleIn
           if (jobInstance.reschedule && jobInstance.rescheduleIn) {
             const nextRunIso = new Date(Date.now() + jobInstance.rescheduleIn).toISOString();
-            console.log(`[Scheduler] Scheduling job in DB: ${jobInstance.name} -> next_run ${nextRunIso}`);
-            await this.db.upsertScheduledJob({ job_name: jobInstance.name, next_run: nextRunIso });
-            console.log(`[Scheduler] Scheduled job in DB: ${jobInstance.name} -> next_run ${nextRunIso}`);
+            console.log(`[Scheduler] Scheduling job in DB: ${jobName} -> next_run ${nextRunIso}`);
+            await this.db.upsertScheduledJob({ job_name: jobName, next_run: nextRunIso });
+            console.log(`[Scheduler] Scheduled job in DB: ${jobName} -> next_run ${nextRunIso}`);
           }
         } else {
-          console.warn(`[Scheduler] Could not find a valid export with static property isGutPunchJob=true in ${file}. Module exports:`, Object.keys(jobModule));
+          console.warn(`[Scheduler] Could not find a valid job export (class extending BaseJob or with static isGutPunchJob=true) in ${file}. Module exports:`, Object.keys(jobModule));
         }
       } catch (error) {
         console.error(`[Scheduler] Error loading job from ${file}:`, error);
       }
     }
 
-    if (Object.keys(this.jobs).length === 0 && files.length > 0) {
+    if (Object.keys(this.jobs).length === 0 && jobFiles.length > 0) {
       console.log("[Scheduler] Finished processing files, but no valid jobs were loaded.");
     } else if (Object.keys(this.jobs).length > 0) {
       console.log(`[Scheduler] Finished loading. Total jobs loaded: ${Object.keys(this.jobs).length}`);
@@ -171,10 +209,17 @@ export class Scheduler {
       const priority = this.config.queues[queueName].priority;
       this.queues[queueName].enqueue({ job, priority });
       console.log(`[Scheduler] Dispatched job: ${job.name} (scheduled)`);
-      if (job.reschedule && job.rescheduleIn) {
-        const nextRunIso = new Date(Date.now() + job.rescheduleIn).toISOString();
+      
+      // Get the job definition from the database to use the most current settings
+      const dbJobDef = await this.db.getJobDefinition(job.name);
+      const shouldReschedule = dbJobDef?.reschedule ?? job.reschedule;
+      const rescheduleTimeMs = dbJobDef?.reschedule_in ?? job.rescheduleIn;
+      
+      if (shouldReschedule && rescheduleTimeMs) {
+        // Use database values for rescheduling if available, fall back to in-memory values
+        const nextRunIso = new Date(Date.now() + rescheduleTimeMs).toISOString();
         await this.db.upsertScheduledJob({ job_name: job.name, next_run: nextRunIso });
-        console.log(`[Scheduler] Rescheduled job in DB: ${job.name} -> next_run ${nextRunIso}`);
+        console.log(`[Scheduler] Rescheduled job in DB: ${job.name} -> next_run ${nextRunIso} (using ${dbJobDef ? 'DB' : 'memory'} settings)`);
       } else {
         await this.db.removeScheduledJob(job.name);
         console.log(`[Scheduler] Removed one-time job: ${job.name}`);
@@ -197,7 +242,7 @@ export class Scheduler {
     let runId: number | undefined = undefined;
     while (attempt < maxRetries) {
       attempt++;
-      const status: JobStatus = attempt === 1 ? JobStatus.Running : JobStatus.Retrying;
+      const status: string = attempt === 1 ? JOB_RUN_STATUS.Running : JOB_RUN_STATUS.Retrying;
       if (!runId) {
         runId = await this.db.insertJobRun({
           job_name: job.name,
@@ -206,27 +251,23 @@ export class Scheduler {
           status,
           started_at: startedAt,
         });
-        // Update job definition status to running
-        await this.db.updateJobDefinitionStatus(job.name, JobStatus.Running);
-      } else {
+        } else {
         await this.db.updateJobRun(runId, { status });
       }
       try {
         const result = await job.run();
         await this.db.updateJobRun(runId, {
-          status: result.status,
+          status: JOB_RUN_STATUS.Success,
           finished_at: new Date().toISOString(),
           output: result.output ? JSON.stringify(result.output) : undefined,
           error: result.error,
         });
-        // Update job definition status based on result
-        await this.db.updateJobDefinitionStatus(job.name, result.status);
-        // Automatic reschedule handled via reschedule/rescheduleIn logic above
+        // We don't update the job definition status on success
         return;
       } catch (err) {
         lastError = err instanceof Error ? err.message : String(err);
         await this.db.updateJobRun(runId, {
-          status: attempt < maxRetries ? JobStatus.Retrying : JobStatus.Failed,
+          status: attempt < maxRetries ? JOB_RUN_STATUS.Retrying : JOB_RUN_STATUS.Failed,
           error: lastError,
         });
       }
@@ -234,12 +275,13 @@ export class Scheduler {
     // All retries failed
     if (runId) {
       await this.db.updateJobRun(runId, {
-        status: JobStatus.Failed,
+        status: JOB_RUN_STATUS.Failed,
         finished_at: new Date().toISOString(),
         error: lastError,
       });
-      // Update job definition status to failed
-      await this.db.updateJobDefinitionStatus(job.name, JobStatus.Failed);
+      // Update job definition status to disabled
+      console.log(`[Scheduler] Job ${job.name} failed permanently. Updating definition status to disabled.`);
+      await this.db.updateJobDefinitionStatus(job.name, "disabled"); // Set definition to disabled
     }
   }
 }

@@ -1,7 +1,7 @@
 import type { JobResult, BackoffStrategy } from "../core/types";
-import { JobStatus } from "../core/types";
+import { JobRunStatus } from "../core/types";
 import { BaseJob } from "../core/base-job";
-import { GutPunchConfig } from "../config";
+import { GutPunchConfig } from "../config/index";
 import { JobDb } from "../db/drizzle";
 
 /**
@@ -28,6 +28,6 @@ export class HelloWorldJob extends BaseJob {
       console.log(msg);
       messages.push(msg);
     }
-    return { status: JobStatus.Success, output: messages };
+    return { status: JobRunStatus.Success, output: messages };
   }
 }

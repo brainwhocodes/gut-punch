@@ -1,7 +1,7 @@
 /**
  * Priority queue implementation for Gut Punch.
  */
-import type { Job } from "./types";
+import type { Job } from "./types.js";
 
 /**
  * Queue item structure.
