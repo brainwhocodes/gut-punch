@@ -6,6 +6,8 @@ A class-first, modular job scheduler for Node.js (TypeScript).
 
 - Define jobs as classes extending `BaseJob`, with built-in status tracking and automatic rescheduling via `reschedule` & `rescheduleIn` flags.
 - YAML-based global configuration (`config.yaml`).
+- Unified build process using Vite (`vite.config.ts`) for both jobs and CLI.
+- Output structure: `dist/jobs/` for jobs, `dist/cli.cjs` for CLI.
 - Persistent job definitions and runs using Drizzle ORM + SQLite.
 - Priority queues, retry/backoff strategies, and customizable rescheduling.
 - CLI tools to list jobs, queues, upcoming schedules, or run the scheduler.
@@ -24,24 +26,39 @@ cd gut-punch
 pnpm install
 ```
 
+## Build
+
+Build all jobs and CLI with a single command:
+
+```bash
+pnpm run build
+```
+
+This will output jobs to `dist/jobs/` and the CLI to `dist/cli.cjs`.
+
 ## Configuration
 
-Edit `config.yaml` to set database file, jobs path, and queue priorities:
+Edit `config.yaml` to set the database file, jobs path, and queue priorities. **Note:** After building, jobs are loaded from the `dist/jobs` directory.
 
 ```yaml
 database:
-  file: ./jobs.db
-jobsDirectory: src/jobs
+  file: ./gut-punch.db
+jobsDirectory: dist/jobs
 queues:
   default:
     priority: 1
-  high:
-    priority: 0
-  low:
-    priority: 2
+  critical:
+    priority: 10
 ```
 
-## Database Migrations
+
+## Build & Database Migrations
+
+Build all jobs and CLI (output to `dist/`):
+
+```bash
+pnpm run build
+```
 
 Generate and apply migrations for the updated schema:
 
@@ -52,7 +69,7 @@ pnpm run db:migrate
 
 ## Defining Jobs
 
-Create classes in `src/jobs/` that extend `BaseJob`:
+Create classes in `src/jobs/` that extend `BaseJob`. These will be automatically built into `dist/jobs/` and loaded by the scheduler at runtime:
 
 ```ts
 import { BaseJob } from '../core/base-job';
