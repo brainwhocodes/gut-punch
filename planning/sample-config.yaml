@@ -1,0 +1,67 @@
+# GutPunch Integration Configuration Sample
+# This file demonstrates the new configurable format for GutPunch when integrated in another project
+
+# Core Configuration
+name: "my-project-gutpunch"
+version: "1.0.0"
+
+# Paths Configuration
+paths:
+  # Directory containing job implementations 
+  jobsDirectory: "./jobs"
+  # Directory containing task definition documents
+  tasksDirectory: "./tasks"
+  # Optional logs directory
+  logsDirectory: "./logs"
+
+# Database Configuration
+database:
+  # Integration mode: "standalone" or "external"
+  mode: "external"
+  # SQLite database file path - can be relative to project root or absolute
+  file: "./my-project-database.db"
+  # Table prefix to avoid collision with existing tables
+  tablePrefix: "gutpunch_"
+  # Optional migration settings
+  migration:
+    # Auto-migrate schema when needed
+    autoMigrate: true
+    # Backup database before migration
+    backupBeforeMigration: true
+
+# Queue Configuration
+queues:
+  high:
+    priority: 0
+    concurrency: 5
+  default:
+    priority: 1
+    concurrency: 3
+  low:
+    priority: 2
+    concurrency: 1
+
+# CLI Customization
+cli:
+  # Custom command prefix
+  commandPrefix: "gp"
+  # Output format: "text", "json", "table"
+  outputFormat: "text"
+  # Custom commands to enable/disable
+  commands:
+    listTasks: true
+    taskStatus: true
+    completeTask: true
+    # Custom command added by host project
+    projectSpecificCommand: true
+
+# Advanced Configuration
+advanced:
+  # Enable debug logging
+  debug: false
+  # Maximum jobs to process per polling cycle
+  maxJobsPerCycle: 100
+  # Polling interval in milliseconds
+  pollingInterval: 1000
+  # Shutdown timeout in milliseconds
+  shutdownTimeout: 5000

@@ -5,48 +5,54 @@ import { readdirSync, existsSync } from "node:fs"; // Use node: prefix
 import { join, resolve } from "node:path"; // Use node: prefix
 import { pathToFileURL } from "node:url"; // Use node: prefix
 import { loadConfig, GutPunchConfig } from "../config/index";
-import { JobDb } from "../db/drizzle";
+import { JobDb, JobDefinitionRecord, JobRunRecord, ScheduledJobRecord } from "../db/drizzle"; // Added types
+import { JobRunStatus, QueuePriority, JobDefinitionStatus } from "./enums"; // Import enums
 
-import { PriorityQueue } from "./queue";
+import { PriorityQueue, QueueItem } from "./queue"; // Import QueueItem
 import { BaseJob } from "./base-job";
 
 /**
- * Local constant for job run statuses to avoid enum import issues.
+ * Type representing a constructor for a class that extends BaseJob.
  */
-const JOB_RUN_STATUS = {
-  Pending: "pending",
-  Running: "running",
-  Success: "success",
-  Failed: "failed",
-  Retrying: "retrying"
-} as const;
-
-/**
- * Queue priorities (lower is higher priority)
- */
-const QUEUE_PRIORITIES = {
-  high: 0,
-  default: 1,
-  low: 2,
-} as const;
+type JobConstructor = new (config: GutPunchConfig, db: JobDb) => BaseJob;
 
 /**
  * Scheduler class for Gut Punch.
  */
 export class Scheduler {
   private readonly config: GutPunchConfig;
-  private readonly db: JobDb;
+  private readonly db: JobDb; // db is now potentially conditional
   private readonly queues: Record<string, PriorityQueue> = {};
   private readonly jobs: Record<string, BaseJob> = {};
 
-  constructor(configPath: string = "config.yaml") {
-    console.log(`[Scheduler] Initializing with config path: ${configPath}`);
+  constructor(configDir: string = ".") {
+    console.log(`[Scheduler] Initializing with config directory: ${configDir}`);
     try {
-      this.config = loadConfig(configPath); // Load config first
-      this.db = new JobDb(this.config.database.file); // Initialize DB
-      // Ensure default queues
-      for (const [name, priority] of Object.entries(QUEUE_PRIORITIES)) {
-        this.queues[name] = new PriorityQueue();
+      this.config = loadConfig(configDir); // Pass configDir to loadConfig
+      
+      // Initialize DB based on mode
+      if (this.config.database.mode === 'standalone') {
+        if (!this.config.database.file) {
+          throw new Error("[Scheduler] Database mode is 'standalone' but 'database.file' is missing in config.");
+        }
+        console.log(`[Scheduler] Initializing standalone database: ${this.config.database.file}`);
+        this.db = new JobDb(this.config.database.file, this.config.database.tablePrefix);
+      } else if (this.config.database.mode === 'external') {
+        // TODO: Implement external database connection logic
+        console.error("[Scheduler] FATAL: 'external' database mode is not yet supported.");
+        throw new Error("'external' database mode is not yet supported.");
+        // Placeholder: this.db = connectToExternalDb(this.config.database.connectionDetails);
+      } else {
+        // Should be caught by config validation, but good practice to check
+        throw new Error(`[Scheduler] Invalid database mode: ${this.config.database.mode}`);
+      }
+
+      // Explicitly define expected queue names based on the enum
+      const queueNames = ['high', 'default', 'low'];
+      for (const name of queueNames) {
+        const enumKey = name.charAt(0).toUpperCase() + name.slice(1) as keyof typeof QueuePriority;
+        const priority = QueuePriority[enumKey];
+        this.queues[name] = new PriorityQueue(); // Use the lowercase name as key
         if (!this.config.queues[name]) {
           this.config.queues[name] = { priority };
         }
@@ -122,7 +128,7 @@ export class Scheduler {
         const jobModule = await import(moduleUrl);
         console.log(`[Scheduler] Successfully imported module: ${file}`);
 
-        let JobClass: any = undefined;
+        let JobClass: JobConstructor | undefined = undefined;
         let foundJobExport = false;
         console.log(`[Scheduler] Inspecting exports in module: ${file}`);
 
@@ -141,26 +147,30 @@ export class Scheduler {
 
         if (foundJobExport && JobClass) {
           console.log(`[Scheduler] Instantiating job: ${file}`);
-          const jobInstance = new JobClass(this.config, this.db) as BaseJob;
+          // Type check ensures JobClass is constructible with config and db
+          const jobInstance: BaseJob = new JobClass(this.config, this.db);
           const jobName = jobInstance.name; // Get name from instance
           if (!jobName) {
              console.warn(`[Scheduler] Job loaded from ${file} does not have a 'name' property.`);
              continue;
           }
-          this.jobs[jobName] = jobInstance;
-          console.log(`[Scheduler] Successfully loaded and instantiated job: ${jobName}`);
-          // Upsert job definition (insert or update)
-          console.log(`[Scheduler] Upserting job definition in DB: ${jobName}`);
-          await this.db.upsertJobDefinition({
+          const jobDef: JobDefinitionRecord = {
             job_name: jobName,
-            status: JOB_RUN_STATUS.Pending, // Use local constant
+            status: JobDefinitionStatus.Pending, // Use Enum
             reschedule: jobInstance.reschedule ?? false,
-            reschedule_in: jobInstance.rescheduleIn ?? null,
-          });
-          console.log(`[Scheduler] Upserted job definition in DB: ${jobName}`);
+            reschedule_in: jobInstance.rescheduleIn ?? null, // Use property name
+          };
+
+          // Store job instance
+          this.jobs[jobName] = jobInstance;
+
+          // Upsert job definition in DB (use Pending status initially)
+          await this.db.upsertJobDefinition(jobDef);
+
+          console.log(`[Scheduler] Loaded and registered job: ${jobName}`);
           // Initial scheduling based on reschedule/rescheduleIn
-          if (jobInstance.reschedule && jobInstance.rescheduleIn) {
-            const nextRunIso = new Date(Date.now() + jobInstance.rescheduleIn).toISOString();
+          if (jobInstance.reschedule && jobInstance.rescheduleIn) { // Use property name
+            const nextRunIso = new Date(Date.now() + jobInstance.rescheduleIn).toISOString(); // Use property name
             console.log(`[Scheduler] Scheduling job in DB: ${jobName} -> next_run ${nextRunIso}`);
             await this.db.upsertScheduledJob({ job_name: jobName, next_run: nextRunIso });
             console.log(`[Scheduler] Scheduled job in DB: ${jobName} -> next_run ${nextRunIso}`);
@@ -200,30 +210,32 @@ export class Scheduler {
     const now = new Date().toISOString();
     const rows = await this.db.getDueScheduledJobs(now);
     for (const row of rows) {
-      const job = this.jobs[row.job_name];
+      const job = this.jobs[row.job_name]; // Get the job instance
       if (!job) {
-        console.warn(`[Scheduler] Scheduled job not found in memory: ${row.job_name}`);
+        console.error(`[Scheduler] Job instance '${row.job_name}' not found in memory during enqueue.`);
         continue;
       }
-      const queueName = "default";
-      const priority = this.config.queues[queueName].priority;
-      this.queues[queueName].enqueue({ job, priority });
-      console.log(`[Scheduler] Dispatched job: ${job.name} (scheduled)`);
-      
-      // Get the job definition from the database to use the most current settings
-      const dbJobDef = await this.db.getJobDefinition(job.name);
-      const shouldReschedule = dbJobDef?.reschedule ?? job.reschedule;
-      const rescheduleTimeMs = dbJobDef?.reschedule_in ?? job.rescheduleIn;
-      
-      if (shouldReschedule && rescheduleTimeMs) {
-        // Use database values for rescheduling if available, fall back to in-memory values
-        const nextRunIso = new Date(Date.now() + rescheduleTimeMs).toISOString();
-        await this.db.upsertScheduledJob({ job_name: job.name, next_run: nextRunIso });
-        console.log(`[Scheduler] Rescheduled job in DB: ${job.name} -> next_run ${nextRunIso} (using ${dbJobDef ? 'DB' : 'memory'} settings)`);
-      } else {
-        await this.db.removeScheduledJob(job.name);
-        console.log(`[Scheduler] Removed one-time job: ${job.name}`);
+      const queueName = job.queue || "default"; // Get queue name from job or default
+      const priority = this.config.queues[queueName]?.priority ?? QueuePriority.Default; // Use Enum
+
+      const runRecord: JobRunRecord = {
+        job_name: row.job_name,
+        queue_name: queueName,
+        priority: priority,
+        status: JobRunStatus.Pending, // Use Enum
+      };
+      const runId = await this.db.insertJobRun(runRecord);
+
+      const queue = this.queues[queueName];
+      if (!queue) {
+        console.error(`[Scheduler] Queue '${queueName}' not found for job '${row.job_name}'`);
+        await this.db.updateJobRun(runId, { status: JobRunStatus.Failed, error: "Queue not found" }); // Use Enum
+        return; // Skip job if queue doesn't exist
       }
+
+      // Enqueue with job, runId, and priority
+      queue.enqueue(job, runId, priority);
+      console.log(`[Scheduler] Enqueued job ${row.job_name} (runId: ${runId}) in queue ${queueName} with priority ${priority}`);
     }
   }
 
@@ -231,57 +243,51 @@ export class Scheduler {
    * Run the next job in the queue if any, with retry and status tracking. Supports variable scheduling.
    */
   private async runNextJob(queueName: string): Promise<void> {
-    const queue = this.queues[queueName];
-    const item = queue.dequeue();
-    if (!item) return;
-    const { job, priority } = item;
-    const startedAt = new Date().toISOString();
-    const maxRetries = typeof job.maxRetries === "number" ? job.maxRetries : 3;
-    let attempt = 0;
-    let lastError: string | undefined = undefined;
     let runId: number | undefined = undefined;
-    while (attempt < maxRetries) {
-      attempt++;
-      const status: string = attempt === 1 ? JOB_RUN_STATUS.Running : JOB_RUN_STATUS.Retrying;
-      if (!runId) {
-        runId = await this.db.insertJobRun({
-          job_name: job.name,
-          queue_name: queueName,
-          priority,
-          status,
-          started_at: startedAt,
-        });
-        } else {
-        await this.db.updateJobRun(runId, { status });
+    try {
+       // Dequeue returns QueueItem which includes job and runId
+      const queueItem: QueueItem | undefined = this.queues[queueName].dequeue();
+
+      if (!queueItem) {
+        // console.log(`[Scheduler] Queue ${queueName} is empty.`);
+        return; // Nothing to run
       }
+
+      const { job, runId: currentRunId } = queueItem;
+      runId = currentRunId; // Assign runId here
+
+      console.log(`[Scheduler] Running job ${job.name} (runId: ${runId}) from queue ${queueName}`);
+
+      // Update job run status to Running
+      await this.db.updateJobRun(runId, { status: JobRunStatus.Running, started_at: new Date().toISOString() }); // Use Enum
+
       try {
-        const result = await job.run();
-        await this.db.updateJobRun(runId, {
-          status: JOB_RUN_STATUS.Success,
-          finished_at: new Date().toISOString(),
-          output: result.output ? JSON.stringify(result.output) : undefined,
-          error: result.error,
-        });
-        // We don't update the job definition status on success
-        return;
-      } catch (err) {
-        lastError = err instanceof Error ? err.message : String(err);
-        await this.db.updateJobRun(runId, {
-          status: attempt < maxRetries ? JOB_RUN_STATUS.Retrying : JOB_RUN_STATUS.Failed,
-          error: lastError,
-        });
+        const output = await job.run();
+        console.log(`[Scheduler] Job ${job.name} (runId: ${runId}) completed successfully.`);
+
+        // Update job run status to Success
+        await this.db.updateJobRun(runId, { status: JobRunStatus.Success, finished_at: new Date().toISOString(), output: output?.output ? JSON.stringify(output.output) : null }); // Use Enum and stringify output
+
+        // Handle rescheduling if needed
+        if (job.reschedule && job.rescheduleIn) { // Use property name
+          const nextRunIso = new Date(Date.now() + job.rescheduleIn).toISOString(); // Use property name
+          await this.db.upsertScheduledJob({ job_name: job.name, next_run: nextRunIso });
+          console.log(`[Scheduler] Rescheduled job in DB: ${job.name} -> next_run ${nextRunIso}`);
+        } else {
+          await this.db.removeScheduledJob(job.name);
+          console.log(`[Scheduler] Removed one-time job: ${job.name}`);
+        }
+      } catch (error) {
+        console.error(`[Scheduler] Job ${job.name} (runId: ${runId}) failed:`, error);
+
+        // Update job run status to Failed
+        await this.db.updateJobRun(runId, { status: JobRunStatus.Failed, finished_at: new Date().toISOString(), error: error instanceof Error ? error.message : String(error) }); // Use Enum and better error handling
+
+        // Handle retries if configured
+        // TODO: Implement retry logic
       }
-    }
-    // All retries failed
-    if (runId) {
-      await this.db.updateJobRun(runId, {
-        status: JOB_RUN_STATUS.Failed,
-        finished_at: new Date().toISOString(),
-        error: lastError,
-      });
-      // Update job definition status to disabled
-      console.log(`[Scheduler] Job ${job.name} failed permanently. Updating definition status to disabled.`);
-      await this.db.updateJobDefinitionStatus(job.name, "disabled"); // Set definition to disabled
+    } catch (error) {
+      console.error(`[Scheduler] Error running job in queue ${queueName}:`, error);
     }
   }
 }

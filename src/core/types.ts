@@ -2,16 +2,7 @@
  * Shared types and interfaces for Gut Punch scheduler
  */
 
-/**
- * Job status enumeration.
- */
-export enum JobRunStatus {
-  Pending = "pending",
-  Running = "running",
-  Success = "success",
-  Failed = "failed",
-  Retrying = "retrying"
-}
+import { JobRunStatus } from "./enums"; // Import the correct enum
 
 /**
  * Interface for a job class.
@@ -44,8 +35,3 @@ export interface JobResult {
  * Backoff strategy type.
  */
 export type BackoffStrategy = "exponential" | "linear" | "none";
-
-/**
- * Represents the persistent status of a job definition in the database.
- */
-export type JobStatus = "pending" | "active" | "disabled";

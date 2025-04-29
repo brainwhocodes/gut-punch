@@ -8,7 +8,8 @@
 import { GutPunch, Scheduler } from "./index";
 import { Job } from "./core/types";
 import { PriorityQueue } from "./core/queue";
-import { Command } from "commander";
+import { Command, OptionValues } from "commander"; // Added OptionValues
+import { findConfigDir } from "../src/config/index"; // Import findConfigDir
 
 /**
  * CLI entry point using Commander
@@ -21,28 +22,49 @@ async function main(): Promise<void> {
     .name('gutpunch')
     .description('Class-first, modular job scheduler for Node')
     .version('0.1.0');
-  program.option('-c, --config <path>', 'Path to YAML config file', 'config.yaml');
+  // Changed option to accept directory, updated description and default
+  program.option('-C, --config-dir <dir>', 'Path to config directory (containing gut-punch.config.yaml)', '.');
+  
+  // Parse options first to determine configDir
+  program.parseOptions(process.argv); // Parse only options
+  const initialOpts = program.opts();
+  let configDirToUse: string;
+  const userDir = initialOpts.configDir;
+  const isDefault = userDir === '.';
+  
+  if (userDir && !isDefault) {
+      configDirToUse = userDir;
+      console.log(`[CLI] Using user-provided config directory: ${configDirToUse}`);
+  } else {
+      try {
+          configDirToUse = findConfigDir(".");
+          console.log(`[CLI] Found config directory via search: ${configDirToUse}`);
+      } catch (error: any) {
+          console.error(`[CLI] Configuration Error: ${error.message}`);
+          process.exit(1);
+      }
+  }
+  
+  // Now define commands using the determined configDirToUse
   program
-    .command('list-jobs')
-    .description('List all loaded jobs')
-    .action(() => handleListJobs(program.opts().config));
-
+      .command('list-jobs')
+      .description('List all loaded jobs')
+      .action(() => handleListJobs(configDirToUse)); 
   program
-    .command('list-queues')
-    .description('List all queues and their job counts')
-    .action(() => handleListQueues(program.opts().config));
-
+      .command('list-queues')
+      .description('List all queues and their job counts')
+      .action(() => handleListQueues(configDirToUse));
   program
-    .command('upcoming')
-    .description('List upcoming jobs (next run date)')
-    .action(() => handleListUpcoming(program.opts().config));
-
+      .command('upcoming')
+      .description('List upcoming jobs (next run date)')
+      .action(() => handleListUpcoming(configDirToUse));
   program
-    .command('run')
-    .description('Run the scheduler as a process')
-    .action(() => handleRunScheduler(program.opts().config));
-
-  await program.parseAsync(process.argv);
+      .command('run')
+      .description('Run the scheduler as a process')
+      .action(() => handleRunScheduler(configDirToUse));
+      
+  // Parse the full command line to execute the correct action
+  await program.parseAsync(process.argv); 
 }
 
 /**
@@ -79,11 +101,12 @@ async function listJobs(scheduler: Scheduler): Promise<void> {
  */
 /**
  * Handler for the 'list-queues' command.
- * @param {string} configPath - Path to YAML config file
+ * @param {string} configDir - Path to config directory
  * @returns {Promise<void>} Completion promise
  */
-async function handleListQueues(configPath: string): Promise<void> {
-  const scheduler: Scheduler = new Scheduler(configPath);
+// Renamed parameter to configDir
+async function handleListQueues(configDir: string): Promise<void> { 
+  const scheduler: Scheduler = new Scheduler(configDir); // Pass configDir
   await scheduler["ensureSchema"]();
   await scheduler["loadJobs"]();
   const queues: Record<string, PriorityQueue> = (scheduler as any).queues;
@@ -96,11 +119,12 @@ async function handleListQueues(configPath: string): Promise<void> {
  */
 /**
  * Handler for the 'upcoming' command.
- * @param {string} configPath - Path to YAML config file
+ * @param {string} configDir - Path to config directory
  * @returns {Promise<void>} Completion promise
  */
-async function handleListUpcoming(configPath: string): Promise<void> {
-  const scheduler: Scheduler = new Scheduler(configPath);
+// Renamed parameter to configDir
+async function handleListUpcoming(configDir: string): Promise<void> { 
+  const scheduler: Scheduler = new Scheduler(configDir); // Pass configDir
   await scheduler["ensureSchema"]();
   await scheduler["loadJobs"]();
   const db = (scheduler as any).db;
@@ -112,11 +136,12 @@ async function handleListUpcoming(configPath: string): Promise<void> {
 
 /**
  * Handler for the 'list-jobs' command.
- * @param {string} configPath - Path to YAML config file
+ * @param {string} configDir - Path to config directory
  * @returns {Promise<void>} Completion promise
  */
-async function handleListJobs(configPath: string): Promise<void> {
-  const scheduler: Scheduler = new Scheduler(configPath);
+// Renamed parameter to configDir
+async function handleListJobs(configDir: string): Promise<void> { 
+  const scheduler: Scheduler = new Scheduler(configDir); // Pass configDir
   await scheduler["ensureSchema"]();
   await scheduler["loadJobs"]();
   const jobsDict: Record<string, Job> = (scheduler as any).jobs;
@@ -131,11 +156,12 @@ async function handleListJobs(configPath: string): Promise<void> {
  */
 /**
  * Handler for the 'run' command.
- * @param {string} configPath - Path to YAML config file
+ * @param {string} configDir - Path to config directory
  * @returns {Promise<void>} Completion promise
  */
-async function handleRunScheduler(configPath: string): Promise<void> {
-  const gutPunch: GutPunch = new GutPunch(configPath);
+// Renamed parameter to configDir
+async function handleRunScheduler(configDir: string): Promise<void> { 
+  const gutPunch: GutPunch = new GutPunch(configDir); // Pass configDir
   await gutPunch.start();
   console.log("GutPunch scheduler started. Press Ctrl+C to exit.");
   // Keep process alive

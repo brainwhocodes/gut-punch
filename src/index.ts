@@ -10,11 +10,11 @@ export class GutPunch {
   private readonly scheduler: Scheduler;
 
   /**
-   * Construct a GutPunch scheduler with optional config path.
-   * @param {string} configPath - Path to YAML config file
+   * Construct a GutPunch scheduler with optional config directory.
+   * @param {string} configDir - Directory containing YAML config file
    */
-  constructor(configPath: string = "config.yaml") {
-    this.scheduler = new Scheduler(configPath);
+  constructor(configDir: string = ".") {
+    this.scheduler = new Scheduler(configDir);
   }
 
   /** Start the scheduler. */
