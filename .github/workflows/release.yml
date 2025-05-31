@@ -3,7 +3,7 @@ name: Build and Release
 on:
   push:
     branches:
-      - main # Or your primary development branch
+      - master # Or your primary development branch
 
 jobs:
   build-and-release:
