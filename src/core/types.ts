@@ -3,6 +3,7 @@
  */
 
 import { JobRunStatus } from "./enums"; // Import the correct enum
+export { JobRunStatus }; // Re-export JobRunStatus
 
 /**
  * Interface for a job class.

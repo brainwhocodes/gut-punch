@@ -1,10 +1,13 @@
 /**
  * Drizzle ORM setup for SQLite.
  */
-import Database from "better-sqlite3";
-import { drizzle } from "drizzle-orm/better-sqlite3";
+import { Database } from "bun:sqlite";
+import { drizzle, type BunSQLiteDatabase } from "drizzle-orm/bun-sqlite";
 import { eq, sql } from "drizzle-orm";
-import { createSchema, GutPunchSchema } from "./schema";
+import { migrate } from "drizzle-orm/bun-sqlite/migrator";
+import { readdir, readFile } from "node:fs/promises";
+import { join } from "node:path";
+import * as schema from "./schema"; // Import all exports from schema
 import { JobRunStatus, JobDefinitionStatus } from "../core/enums"; // Import enums directly
 
 /**
@@ -54,23 +57,25 @@ export interface JobDefinitionRecord {
 }
 
 export class JobDb {
-  private readonly db: ReturnType<typeof drizzle>;
-  private readonly tablePrefix: string;
-  private readonly schema: GutPunchSchema;
+  private readonly sqliteInstance: Database;
+  private readonly db: BunSQLiteDatabase<typeof schema>;
+  // private readonly tablePrefix: string; // Temporarily remove prefixing logic for simplicity
+  private readonly schema: typeof schema;
 
   /**
    * Constructor for JobDb.
    * @param file - Path to the SQLite database file.
    * @param tablePrefix - Optional prefix for database table names.
    */
-  constructor(file: string, tablePrefix?: string) {
-    const sqlite = new Database(file);
-    this.db = drizzle(sqlite);
-    this.tablePrefix = tablePrefix || '';
-    this.schema = createSchema(this.tablePrefix);
-    if (this.tablePrefix) {
-      console.log(`[DB] Using table prefix: '${this.tablePrefix}'`);
-    }
+  constructor(file: string /*, tablePrefix?: string */) { // Temporarily remove prefixing
+    this.sqliteInstance = new Database(file);
+    // Cast to any temporarily if schema type causes issues, then refine
+    this.db = drizzle(this.sqliteInstance, { schema }); 
+    this.schema = schema;
+    // this.tablePrefix = tablePrefix || ''; 
+    // if (this.tablePrefix) {
+    //   console.log(`[DB] Using table prefix: '${this.tablePrefix}'`);
+    // }
   }
 
   /**
@@ -203,5 +208,35 @@ export class JobDb {
       ...row, 
       status: row.status as JobDefinitionStatus // Explicit cast if needed
     } as JobDefinitionRecord;
+  }
+
+  /**
+   * Closes the database connection.
+   */
+  public closeDb(): void {
+    console.log("[DB] Closing database connection...");
+    if (this.sqliteInstance) {
+      this.sqliteInstance.close();
+      console.log("[DB] Database connection closed.");
+    } else {
+      console.warn("[DB] sqliteInstance not found, cannot close DB.");
+    }
+  }
+}
+
+/**
+ * Runs database migrations.
+ * @param db - The Drizzle database instance.
+ * @param migrationsFolder - Path to the folder containing migration SQL files.
+ */
+export async function runMigrations(db: BunSQLiteDatabase<typeof schema>, migrationsFolder: string) {
+  console.log(`[DB] Running migrations from folder: ${migrationsFolder}`);
+  try {
+    // Drizzle's migrate function expects an object with a migrationsFolder property
+    await migrate(db, { migrationsFolder });
+    console.log("[DB] Migrations applied successfully.");
+  } catch (error) {
+    console.error("[DB] Error applying migrations:", error);
+    throw error; // Re-throw to fail the setup if migrations don't apply
   }
 }

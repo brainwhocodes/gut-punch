@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 /**
  * GutPunch CLI
  * Provides commands to list jobs, queues, upcoming jobs, and run the scheduler as a process.

@@ -1,0 +1,8 @@
+database:
+  file: ./test/gut-punch-test.sqlite
+jobsDirectory: dist/jobs
+queues:
+  default:
+    priority: 1
+  critical:
+    priority: 10

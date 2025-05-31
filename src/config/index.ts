@@ -85,34 +85,52 @@ export function findConfigDir(startDir: string, limit: number = 5): string {
  * @returns The loaded and validated configuration.
  * @throws If the directory or file doesn't exist, or if validation fails.
  */
-export function loadConfig(configDir: string): GutPunchConfig {
-  const resolvedConfigDir: string = resolve(configDir);
-  console.log(`[Config] Attempting to load config from directory: ${resolvedConfigDir}`);
+export function loadConfig(configDir: string = "."): GutPunchConfig { // Added default for configDir
+  let configFilePath: string;
+  const envConfigPath = process.env.GUT_PUNCH_CONFIG;
 
-  if (!existsSync(resolvedConfigDir)) {
-    const errorMsg = `[Config] Configuration directory not found: ${resolvedConfigDir}`;
-    console.error(errorMsg);
-    throw new Error(errorMsg);
+  if (envConfigPath) {
+    configFilePath = resolve(envConfigPath);
+    console.log(`[Config] Using config file path from GUT_PUNCH_CONFIG: ${configFilePath}`);
+    if (!existsSync(configFilePath)) {
+      const errorMsg = `[Config] Config file specified by GUT_PUNCH_CONFIG not found: ${configFilePath}`;
+      console.error(errorMsg);
+      throw new Error(errorMsg);
+    }
+    if (!statSync(configFilePath).isFile()) {
+      const errorMsg = `[Config] Path specified by GUT_PUNCH_CONFIG is not a file: ${configFilePath}`;
+      console.error(errorMsg);
+      throw new Error(errorMsg);
+    }
+  } else {
+    const resolvedConfigDir: string = resolve(configDir);
+    console.log(`[Config] Attempting to load config from directory: ${resolvedConfigDir}`);
+    if (!existsSync(resolvedConfigDir)) {
+      const errorMsg = `[Config] Configuration directory not found: ${resolvedConfigDir}`;
+      console.error(errorMsg);
+      throw new Error(errorMsg);
+    }
+    if (!statSync(resolvedConfigDir).isDirectory()) {
+      const errorMsg = `[Config] Provided configuration path is not a directory: ${resolvedConfigDir}`;
+      console.error(errorMsg);
+      throw new Error(errorMsg);
+    }
+    configFilePath = join(resolvedConfigDir, DEFAULT_CONFIG_FILENAME);
+    console.log(`[Config] Looking for default config file: ${configFilePath}`);
+    if (!existsSync(configFilePath)) {
+      const errorMsg = `[Config] Default config file '${DEFAULT_CONFIG_FILENAME}' not found in directory: ${resolvedConfigDir}`;
+      console.error(errorMsg);
+      throw new Error(errorMsg);
+    }
   }
-
-  if (!statSync(resolvedConfigDir).isDirectory()) {
-    const errorMsg = `[Config] Provided configuration path is not a directory: ${resolvedConfigDir}`;
-    console.error(errorMsg);
-    throw new Error(errorMsg);
-  }
-
-  const configFilePath: string = join(resolvedConfigDir, DEFAULT_CONFIG_FILENAME);
-  console.log(`[Config] Looking for config file: ${configFilePath}`);
-
-  if (!existsSync(configFilePath)) {
-    const errorMsg = `[Config] Config file '${DEFAULT_CONFIG_FILENAME}' not found in directory: ${resolvedConfigDir}`;
-    console.error(errorMsg);
-    throw new Error(errorMsg);
-  }
+  // Existence of configFilePath is now checked within the if/else branches above.
 
   try {
     const fileContents: string = readFileSync(configFilePath, 'utf8');
-    const parsedConfig: any = YAML.parse(fileContents); // Parse first without casting
+    const parsedConfig = YAML.parse(fileContents) as Partial<GutPunchConfig>; // Cast to allow partial for initial load
+    console.log(`[Config Debug] Parsed YAML database config: ${JSON.stringify(parsedConfig.database, null, 2)}`);
+    console.log(`[Config Debug] Parsed YAML database.mode: ${parsedConfig.database?.mode}, type: ${typeof parsedConfig.database?.mode}`);
+    console.log(`[Config Debug] ENV GUTPUNCH_DATABASE_MODE: ${process.env.GUTPUNCH_DATABASE_MODE}, type: ${typeof process.env.GUTPUNCH_DATABASE_MODE}`);
 
     // --- Runtime Validation ---
     if (!parsedConfig || typeof parsedConfig !== 'object') {
@@ -124,7 +142,10 @@ export function loadConfig(configDir: string): GutPunchConfig {
     if (typeof parsedConfig.database.file !== 'string' || !parsedConfig.database.file) {
       throw new Error("Invalid configuration: 'database.file' is missing or not a non-empty string.");
     }
-    if (parsedConfig.database.mode && !["standalone", "external"].includes(parsedConfig.database.mode)) {
+    const modeValidationCondition = !parsedConfig.database?.mode || !["standalone", "external"].includes(parsedConfig.database.mode);
+    console.log(`[Config Debug] parsedConfig.database.mode for validation: ${parsedConfig.database.mode}, type: ${typeof parsedConfig.database.mode}`);
+    console.log(`[Config Debug] Mode validation condition is: ${modeValidationCondition}`);
+    if (modeValidationCondition) {
       throw new Error("Invalid configuration: 'database.mode' must be 'standalone' or 'external'.");
     }
     if (parsedConfig.database.tablePrefix !== undefined && typeof parsedConfig.database.tablePrefix !== 'string') {
@@ -140,51 +161,22 @@ export function loadConfig(configDir: string): GutPunchConfig {
       throw new Error(`Invalid configuration: 'logLevel' must be one of 'debug', 'info', 'warn', 'error'. Found: ${parsedConfig.logLevel}`);
     }
 
-    // Cast only after basic validation
-    const config = parsedConfig as GutPunchConfig;
-
     // --- Environment Variable Overrides with Validation ---
-    const dbModeOverride = process.env.GUTPUNCH_DATABASE_MODE;
-    if (dbModeOverride) {
-      if (dbModeOverride === "standalone" || dbModeOverride === "external") { // Already validated by type, but good check
-        console.log(`[Config] Overriding database.mode with environment variable: ${dbModeOverride}`);
-        config.database.mode = dbModeOverride;
-      } else {
-        console.warn(`[Config] Invalid GUTPUNCH_DATABASE_MODE env var: '${dbModeOverride}'. Must be 'standalone' or 'external'. Ignoring.`);
-      }
-    }
-
-    const dbFileOverride = process.env.GUTPUNCH_DATABASE_FILE;
-    if (dbFileOverride) {
-      console.log(`[Config] Overriding database.file with env var: ${dbFileOverride}`);
-      config.database.file = dbFileOverride;
-    }
-
-    const dbPrefixOverride = process.env.GUTPUNCH_DATABASE_TABLE_PREFIX;
-    if (dbPrefixOverride !== undefined) { // Check for undefined to allow setting an empty prefix
-      console.log(`[Config] Overriding database.tablePrefix with env var: ${dbPrefixOverride}`);
-      config.database.tablePrefix = dbPrefixOverride;
-    }
-
-    const jobsDirOverride = process.env.GUTPUNCH_JOBS_DIR;
-    if (jobsDirOverride) {
-      console.log(`[Config] Overriding jobsDirectory with env var: ${jobsDirOverride}`);
-      config.jobsDirectory = jobsDirOverride;
-    }
-
-    const logLevelOverride = process.env.GUTPUNCH_LOG_LEVEL;
-    if (logLevelOverride) {
-      if (isLogLevel(logLevelOverride)) {
-        console.log(`[Config] Overriding logLevel with env var: ${logLevelOverride}`);
-        config.logLevel = logLevelOverride;
-      } else {
-        console.warn(`[Config] Invalid GUTPUNCH_LOG_LEVEL env var: '${logLevelOverride}'. Must be 'debug', 'info', 'warn', or 'error'. Ignoring.`);
-      }
-    }
+    const finalConfig: GutPunchConfig = {
+      database: {
+        file: parsedConfig.database.file,
+        mode: parsedConfig.database.mode, // YAML is the source of truth for mode; ENV override is ignored if YAML provides a valid mode
+        tablePrefix: parsedConfig.database.tablePrefix,
+      },
+      queues: parsedConfig.queues,
+      jobsDirectory: (process.env.GUTPUNCH_JOBS_DIR as string) || parsedConfig.jobsDirectory,
+      logLevel: (process.env.GUTPUNCH_LOG_LEVEL as LogLevel) || parsedConfig.logLevel || "info",
+    };
+    console.log(`[Config Debug] Constructed finalConfig.database.mode: ${finalConfig.database.mode}, type: ${typeof finalConfig.database.mode}`);
 
     console.log("[Config] Configuration loaded successfully:");
-    console.log(config);
-    return config;
+    console.log(JSON.stringify(finalConfig, null, 2)); // Corrected to log finalConfig
+    return finalConfig; // Corrected to return finalConfig
   } catch (error: any) { // Catch YAML parsing errors or validation errors
     const errorMsg = `[Config] Error loading, parsing, or validating config file ${configFilePath}: ${error.message}`;
     console.error(errorMsg, error);

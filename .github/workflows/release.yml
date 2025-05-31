@@ -1,0 +1,63 @@
+name: Build and Release
+
+on:
+  push:
+    branches:
+      - main # Or your primary development branch
+
+jobs:
+  build-and-release:
+    name: Build and Release Executable
+    runs-on: windows-latest # Use a Windows runner to build the .exe
+
+    permissions:
+      contents: write # Required to create releases and push tags
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest # Or specify a particular Bun version
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+        shell: pwsh
+
+      - name: Build job files (Vite)
+        run: bun run build
+        shell: pwsh
+
+      - name: Bundle executable
+        run: bun run bundle:executable
+        # This command is defined in your package.json
+        # It should produce gut-punch-exec.exe in the root
+        shell: pwsh
+
+      - name: Archive job files
+        run: Compress-Archive -Path ./dist/jobs -DestinationPath ./jobs.zip -Force
+        shell: pwsh
+
+      - name: Get package version
+        id: package_version
+        run: |
+          $version = (Get-Content ./package.json | ConvertFrom-Json).version
+          echo "version=$version" >> $env:GITHUB_OUTPUT
+        shell: pwsh
+
+      - name: Create GitHub Release
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.package_version.outputs.version }}-${{ github.run_number }}
+          name: Release v${{ steps.package_version.outputs.version }} (Build ${{ github.run_number }})
+          body: |
+            Automated release for Gut-Punch.
+            Commit: ${{ github.sha }}
+          draft: false
+          prerelease: false # Set to true if these are pre-releases
+          files: |
+            ./gut-punch-exec.exe
+            ./jobs.zip

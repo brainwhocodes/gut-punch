@@ -1,9 +1,10 @@
 /**
  * Scheduler: Loads jobs, manages queues, and schedules execution.
  */
-import { readdirSync, existsSync } from "node:fs"; // Use node: prefix
-import { join, resolve } from "node:path"; // Use node: prefix
-import { pathToFileURL } from "node:url"; // Use node: prefix
+// Using standard imports for Bun compatibility
+import { readdirSync, existsSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { loadConfig, GutPunchConfig } from "../config/index";
 import { JobDb, JobDefinitionRecord, JobRunRecord, ScheduledJobRecord } from "../db/drizzle"; // Added types
 import { JobRunStatus, QueuePriority, JobDefinitionStatus } from "./enums"; // Import enums
@@ -24,6 +25,7 @@ export class Scheduler {
   private readonly db: JobDb; // db is now potentially conditional
   private readonly queues: Record<string, PriorityQueue> = {};
   private readonly jobs: Record<string, BaseJob> = {};
+  private pollingIntervalId: Timer | null = null; // Store interval ID
 
   constructor(configDir: string = ".") {
     console.log(`[Scheduler] Initializing with config directory: ${configDir}`);
@@ -36,7 +38,7 @@ export class Scheduler {
           throw new Error("[Scheduler] Database mode is 'standalone' but 'database.file' is missing in config.");
         }
         console.log(`[Scheduler] Initializing standalone database: ${this.config.database.file}`);
-        this.db = new JobDb(this.config.database.file, this.config.database.tablePrefix);
+        this.db = new JobDb(this.config.database.file);
       } else if (this.config.database.mode === 'external') {
         // TODO: Implement external database connection logic
         console.error("[Scheduler] FATAL: 'external' database mode is not yet supported.");
@@ -168,12 +170,19 @@ export class Scheduler {
           await this.db.upsertJobDefinition(jobDef);
 
           console.log(`[Scheduler] Loaded and registered job: ${jobName}`);
-          // Initial scheduling based on reschedule/rescheduleIn
-          if (jobInstance.reschedule && jobInstance.rescheduleIn) { // Use property name
-            const nextRunIso = new Date(Date.now() + jobInstance.rescheduleIn).toISOString(); // Use property name
-            console.log(`[Scheduler] Scheduling job in DB: ${jobName} -> next_run ${nextRunIso}`);
+          // Scheduling logic:
+          if (jobInstance.reschedule && typeof jobInstance.rescheduleIn === 'number') {
+            // This is for jobs that run, then reschedule themselves after a delay.
+            // This is the first run scheduling. Subsequent reschedules are handled in runNextJob.
+            const nextRunIso = new Date(Date.now() + jobInstance.rescheduleIn).toISOString();
+            console.log(`[Scheduler] Job ${jobName} is configured to run and then reschedule. Initial schedule at: ${nextRunIso} (in ${jobInstance.rescheduleIn}ms)`);
             await this.db.upsertScheduledJob({ job_name: jobName, next_run: nextRunIso });
-            console.log(`[Scheduler] Scheduled job in DB: ${jobName} -> next_run ${nextRunIso}`);
+          } else {
+            // This is a one-off job (no cron, no rescheduleIn config, or rescheduleIn is not a number).
+            // Schedule it for immediate execution.
+            const nextRunIso = new Date().toISOString(); 
+            console.log(`[Scheduler] Job ${jobName} is a one-off or has no specific recurring schedule. Scheduling for immediate run: ${nextRunIso}`);
+            await this.db.upsertScheduledJob({ job_name: jobName, next_run: nextRunIso });
           }
         } else {
           console.warn(`[Scheduler] Could not find a valid job export (class extending BaseJob or with static isGutPunchJob=true) in ${file}. Module exports:`, Object.keys(jobModule));
@@ -194,7 +203,11 @@ export class Scheduler {
    * Poll persistent scheduled_jobs table and run due jobs.
    */
   private scheduleJobs(): void {
-    setInterval(() => {
+    if (this.pollingIntervalId) {
+      console.warn("[Scheduler] Polling already active. Clearing existing interval before starting a new one.");
+      clearInterval(this.pollingIntervalId);
+    }
+    this.pollingIntervalId = setInterval(() => {
       console.log("[Scheduler] Polling scheduled jobs and processing queues...");
       this.pollAndEnqueueJobs().catch(err => console.error("[Scheduler] Error polling scheduled jobs:", err));
       for (const queueName of Object.keys(this.queues)) {
@@ -289,5 +302,21 @@ export class Scheduler {
     } catch (error) {
       console.error(`[Scheduler] Error running job in queue ${queueName}:`, error);
     }
+  }
+
+  /**
+   * Stops the scheduler, clears any running intervals, and closes the database connection.
+   */
+  public stop(): void {
+    console.log("[Scheduler] Stopping scheduler...");
+    if (this.pollingIntervalId) {
+      clearInterval(this.pollingIntervalId);
+      this.pollingIntervalId = null;
+      console.log("[Scheduler] Polling interval cleared.");
+    }
+    if (this.db) {
+      this.db.closeDb(); // This now correctly closes the underlying bun:sqlite connection
+    }
+    console.log("[Scheduler] Scheduler stopped.");
   }
 }

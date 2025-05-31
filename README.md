@@ -1,24 +1,26 @@
 # Gut Punch
 
-A class-first, modular job scheduler for Node.js (TypeScript).
+A class-first, modular job scheduler for TypeScript, supporting both Node.js and Bun runtimes.
 
 ## Features
 
 - Define jobs as classes extending `BaseJob`, with built-in status tracking and automatic rescheduling via `reschedule` & `rescheduleIn` flags.
 - YAML-based global configuration (`config.yaml`).
-- Unified build process using Vite (`vite.config.ts`) for both jobs and CLI.
+- Flexible build process using either Vite or Bun's bundler.
 - Output structure: `dist/jobs/` for jobs, `dist/cli.cjs` for CLI.
 - Persistent job definitions and runs using Drizzle ORM + SQLite.
 - Priority queues, retry/backoff strategies, and customizable rescheduling.
 - CLI tools to list jobs, queues, upcoming schedules, or run the scheduler.
+- Support for both Node.js and Bun runtimes.
 
 ## Prerequisites
 
-- Node.js >= 18
-- pnpm (or npm)
+- Node.js >= 18 or Bun >= 1.0.0
 - SQLite (via `better-sqlite3`)
 
 ## Installation
+
+### Using Node.js with pnpm
 
 ```bash
 git clone <repository-url>
@@ -26,7 +28,17 @@ cd gut-punch
 pnpm install
 ```
 
+### Using Bun
+
+```bash
+git clone <repository-url>
+cd gut-punch
+bun install
+```
+
 ## Build
+
+### Using Node.js with Vite
 
 Build all jobs and CLI with a single command:
 
@@ -34,7 +46,15 @@ Build all jobs and CLI with a single command:
 pnpm run build
 ```
 
-This will output jobs to `dist/jobs/` and the CLI to `dist/cli.cjs`.
+### Using Bun
+
+Build with Bun's bundler:
+
+```bash
+bun run build:bun
+```
+
+Both methods will output jobs to `dist/jobs/` and the CLI to `dist/cli.cjs`.
 
 ## Configuration
 
@@ -57,14 +77,23 @@ queues:
 Build all jobs and CLI (output to `dist/`):
 
 ```bash
+# Using Node.js
 pnpm run build
+
+# Using Bun
+bun run build:bun
 ```
 
 Generate and apply migrations for the updated schema:
 
 ```bash
+# Using Node.js
 pnpm run db:generate
 pnpm run db:migrate
+
+# Using Bun
+bun run db:generate
+bun run db:migrate
 ```
 
 ## Defining Jobs
@@ -89,19 +118,30 @@ export class MyJob extends BaseJob {
 
 ## CLI Usage
 
-Run locally in development:
+### Run locally in development:
 
 ```bash
+# Using Node.js
 pnpm run dev
+
+# Using Bun
+bun run dev:bun
 ```
 
-Use the CLI commands:
+### Use the CLI commands:
 
 ```bash
+# Using Node.js
 npx ts-node src/cli.ts list-jobs     # Show loaded job definitions
 npx ts-node src/cli.ts list-queues   # Show current queue counts
 npx ts-node src/cli.ts upcoming      # List upcoming scheduled jobs
 npx ts-node src/cli.ts run           # Start scheduler (blocks)
+
+# Using Bun
+bun run src/cli.ts list-jobs         # Show loaded job definitions
+bun run src/cli.ts list-queues       # Show current queue counts
+bun run src/cli.ts upcoming          # List upcoming scheduled jobs
+bun run src/cli.ts run               # Start scheduler (blocks)
 ```
 
 ## Production
@@ -109,8 +149,13 @@ npx ts-node src/cli.ts run           # Start scheduler (blocks)
 Build and start:
 
 ```bash
+# Using Node.js
 pnpm run build
 pnpm start
+
+# Using Bun
+bun run build:bun
+bun start
 ```
 
 ## Contributing
@@ -123,5 +168,17 @@ pnpm start
 
 MIT
 
+## Testing
+
+Run tests:
+
+```bash
+# Run tests
+bun test
+
+# Run tests with coverage
+bun test --coverage
+```
+
 ---
-*Generated on 2025-04-19*
+*Updated on 2025-05-31*

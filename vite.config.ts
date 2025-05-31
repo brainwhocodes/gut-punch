@@ -2,6 +2,9 @@ import { defineConfig, type UserConfigExport } from 'vite';
 import { resolve, basename } from 'path';
 import { globSync } from 'glob';
 
+// Check if running in Bun environment
+const isBun = typeof process !== 'undefined' && process.versions && 'bun' in process.versions;
+
 // Find all .ts files in the src/jobs directory for job entries
 const jobFiles = globSync('src/jobs/**/*.ts').reduce((acc, file) => {
   const key = `jobs/${basename(file, '.ts')}`; // Prefix with 'jobs/' for output structure
@@ -18,11 +21,14 @@ const cliEntry = {
 const allEntries = { ...jobFiles, ...cliEntry };
 
 const config: UserConfigExport = defineConfig({
+  optimizeDeps: {
+    exclude: ['bun:sqlite'],
+  },
   build: {
     outDir: 'dist',
     emptyOutDir: true, // Let this single build manage the dist directory
     sourcemap: true,
-    target: 'node18', // Target Node.js environment for both
+    target: isBun ? 'bun' : 'node18', // Target Bun or Node.js environment
     // We can't use build.lib directly for multiple entry types easily. Use rollupOptions.
     rollupOptions: {
       input: allEntries,
@@ -43,9 +49,10 @@ const config: UserConfigExport = defineConfig({
       // Externalize dependencies that shouldn't be bundled
       external: [
         /^node:.*/, // Node built-in modules (handles fs, path, url, etc.)
-        'better-sqlite3',
+        /^bun:.*/, // Add bun:sqlite as external using regex
         'drizzle-orm',
-        'sqlite3',
+        // 'better-sqlite3', // Removed
+        // 'sqlite3', // Removed
         'yaml',
         'commander',
       ],

@@ -11,29 +11,31 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "vite build",
+    "build:bun": "bun run bun-build.ts",
     "dev": "vite",
-    "test": "vitest run",
-    "cli:list-jobs": "node dist/cli.cjs list-jobs",
-    "cli:list-queues": "node dist/cli.cjs list-queues",
-    "cli:upcoming": "node dist/cli.cjs upcoming",
-    "cli:run": "node dist/cli.cjs run",
+    "dev:bun": "bun --watch src/index.ts",
+    "test": "bun test",
+    "test:coverage": "bun test --coverage",
+    "cli:list-jobs": "bun run dist/cli.cjs list-jobs",
+    "cli:list-queues": "bun run dist/cli.cjs list-queues",
+    "cli:upcoming": "bun run dist/cli.cjs upcoming",
+    "cli:run": "bun run dist/cli.cjs run",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
     "db:push:test": "drizzle-kit push --config=drizzle.test.config.ts",
-    "db:migrate": "drizzle-kit migrate"
+    "db:migrate": "drizzle-kit migrate",
+    "bundle:executable": "bun build ./src/cli.ts --compile --outfile ./gut-punch-exec"
   },
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "better-sqlite3": "^11.9.1",
     "commander": "^13.1.0",
     "drizzle-orm": "^0.42.0",
-    "sqlite3": "^5.1.7",
     "yaml": "^2.7.1"
   },
   "devDependencies": {
     "@commander-js/extra-typings": "^13.1.0",
-    "@types/better-sqlite3": "^7.6.13",
+    "@types/bun": "1.2.15",
     "@types/glob": "^8.1.0",
     "drizzle-kit": "^0.31.0",
     "glob": "^11.0.1",
@@ -43,13 +45,12 @@
     "vitest": "^3.1.2"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=18.0.0",
+    "bun": ">=1.0.0"
   },
-  "packageManager": "pnpm@10.6.3+sha512.bb45e34d50a9a76e858a95837301bfb6bd6d35aea2c5d52094fa497a467c43f5c440103ce2511e9e0a2f89c3d6071baac3358fc68ac6fb75e2ceb3d2736065e6",
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "better-sqlite3",
-      "esbuild"
-    ]
-  }
+  "packageManager": "bun@1.0.0",
+  "trustedDependencies": [
+    "better-sqlite3",
+    "esbuild"
+  ]
 }
