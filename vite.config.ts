@@ -2,6 +2,38 @@ import { defineConfig, type UserConfigExport } from 'vite';
 import { resolve, basename } from 'path';
 import { globSync } from 'glob';
 
+// Custom Rollup plugin to filter entries for different output formats
+function filterEntriesPlugin() {
+  return {
+    name: 'vite-plugin-filter-entries',
+    generateBundle(outputOptions, bundle) {
+      const format = outputOptions.format;
+      for (const fileName in bundle) {
+        const chunk = bundle[fileName];
+        // Ensure it's an entry chunk and has an original name (facadeModuleId implies it's from an input entry)
+        if (chunk.type === 'chunk' && chunk.isEntry && chunk.facadeModuleId) {
+          const entryName = chunk.name; // This is the key from rollupOptions.input (e.g., 'jobs/my-job' or 'cli')
+          let keep = false;
+
+          if (format === 'es' || format === 'esm') { // For ESM output (jobs)
+            if (entryName.startsWith('jobs/')) {
+              keep = true;
+            }
+          } else if (format === 'cjs') { // For CJS output (CLI)
+            if (entryName === 'cli') {
+              keep = true;
+            }
+          }
+
+          if (!keep) {
+            delete bundle[fileName];
+          }
+        }
+      }
+    }
+  };
+}
+
 // Check if running in Bun environment
 const isBun = typeof process !== 'undefined' && process.versions && 'bun' in process.versions;
 
@@ -33,18 +65,22 @@ const config: UserConfigExport = defineConfig({
     rollupOptions: {
       input: allEntries,
       output: [
-        // Output for Jobs (CJS)
+        // Output for Jobs (ESM)
+        {
+          dir: 'dist',
+          format: 'esm',
+          entryFileNames: '[name].mjs', // e.g., jobs/my-job.mjs, cli.mjs (plugin will remove cli.mjs)
+          chunkFileNames: 'chunks/[name]-[hash].mjs',
+          exports: 'auto',
+        },
+        // Output for CLI (CJS)
         {
           dir: 'dist',
           format: 'cjs',
-          entryFileNames: (chunkInfo) => {
-            // Place jobs in dist/jobs/, keep CLI at dist/cli.cjs
-            return chunkInfo.name.startsWith('jobs/') ? `[name].cjs` : `[name].cjs`;
-          },
-          chunkFileNames: 'chunks/[name]-[hash].cjs', // How shared chunks are named
+          entryFileNames: '[name].cjs', // e.g., jobs/my-job.cjs, cli.cjs (plugin will remove jobs/my-job.cjs)
+          chunkFileNames: 'chunks/[name]-[hash].cjs',
           exports: 'auto',
-        },
-        // If you needed an ES module output for jobs/cli as well, add another output object here
+        }
       ],
       // Externalize dependencies that shouldn't be bundled
       external: [
@@ -68,7 +104,7 @@ const config: UserConfigExport = defineConfig({
     minify: false, // Keep builds readable for debugging
   },
   // If jobs or CLI import CSS or other assets, configure plugins here
-  // plugins: [],
+  plugins: [filterEntriesPlugin()],
 });
 
 export default config;

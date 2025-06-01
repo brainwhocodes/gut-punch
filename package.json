@@ -24,7 +24,7 @@
     "db:push": "drizzle-kit push",
     "db:push:test": "drizzle-kit push --config=drizzle.test.config.ts",
     "db:migrate": "drizzle-kit migrate",
-    "bundle:executable": "bun build ./src/cli.ts --compile --outfile ./gut-punch-exec"
+    "bundle:executable": "bun build ./src/cli.ts --compile --outfile ./gutpunch-cli"
   },
   "author": "",
   "license": "MIT",

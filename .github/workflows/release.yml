@@ -1,17 +1,30 @@
-name: Build and Release
+name: Build and Release Executables
 
 on:
   push:
     branches:
-      - master # Or your primary development branch
+      - 'release-v*' # Trigger on branches like release-v1.0.0
 
 jobs:
   build-and-release:
-    name: Build and Release Executable
-    runs-on: windows-latest # Use a Windows runner to build the .exe
+    name: Build and Release Executable (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: windows-latest
+            asset_name_suffix: .exe
+            asset_content_type: application/octet-stream
+          - os: ubuntu-latest
+            asset_name_suffix: '' # No suffix for Linux
+            asset_content_type: application/octet-stream
+          - os: macos-latest
+            asset_name_suffix: '' # No suffix for macOS
+            asset_content_type: application/octet-stream
 
     permissions:
-      contents: write # Required to create releases and push tags
+      contents: write # Required to create releases
 
     steps:
       - name: Checkout code
@@ -20,44 +33,59 @@ jobs:
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest # Or specify a particular Bun version
+          bun-version: latest
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
-        shell: pwsh
 
+      # Vite build for job files (.mjs) - still needed if CLI imports them or for other purposes
+      # If CLI is fully standalone and doesn't need dist/jobs, this can be removed.
       - name: Build job files (Vite)
         run: bun run build
-        shell: pwsh
 
-      - name: Bundle executable
-        run: bun run bundle:executable
-        # This command is defined in your package.json
-        # It should produce gut-punch-exec.exe in the root
-        shell: pwsh
-
-      - name: Archive job files
-        run: Compress-Archive -Path ./dist/jobs -DestinationPath ./jobs.zip -Force
-        shell: pwsh
-
-      - name: Get package version
-        id: package_version
+      - name: Extract version from branch
+        id: extract_version
         run: |
-          $version = (Get-Content ./package.json | ConvertFrom-Json).version
-          echo "version=$version" >> $env:GITHUB_OUTPUT
+          BRANCH_NAME="${{ github.ref_name }}"
+          VERSION=${BRANCH_NAME#release-v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+        shell: bash
+
+      - name: Determine executable name
+        id: exec_name
+        run: |
+          EXECUTABLE_NAME="gutpunch-cli-${{ steps.extract_version.outputs.version }}-${{ matrix.os }}${{ matrix.asset_name_suffix }}"
+          echo "name=$EXECUTABLE_NAME" >> $GITHUB_OUTPUT
+        shell: bash
+
+      - name: Bundle executable with Bun
+        run: |
+          bun build ./src/cli.ts --compile --outfile ./${{ steps.exec_name.outputs.name }}
+        # This command is based on your package.json script 'bundle:executable'
+
+      - name: Archive executable (Windows)
+        if: matrix.os == 'windows-latest'
+        run: Compress-Archive -Path .\${{ steps.exec_name.outputs.name }} -DestinationPath .\${{ steps.exec_name.outputs.name }}.zip -Force
         shell: pwsh
+
+      - name: Archive executable (Linux/macOS)
+        if: matrix.os != 'windows-latest'
+        run: zip ./${{ steps.exec_name.outputs.name }}.zip ./${{ steps.exec_name.outputs.name }}
 
       - name: Create GitHub Release
-        id: create_release
+        # This step will run for each OS in the matrix, but only the first one that successfully creates the release will actually create it.
+        # Subsequent runs for other OSs will attempt to update the existing release with their assets.
+        # To avoid multiple release creations/overwrites, consider a separate job for release creation that depends on all build jobs.
+        # For now, this uses softprops/action-gh-release's ability to append files if the release already exists.
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release-v')
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.package_version.outputs.version }}-${{ github.run_number }}
-          name: Release v${{ steps.package_version.outputs.version }} (Build ${{ github.run_number }})
+          tag_name: v${{ steps.extract_version.outputs.version }}
+          name: Release v${{ steps.extract_version.outputs.version }}
           body: |
-            Automated release for Gut-Punch.
+            Automated release for Gut-Punch v${{ steps.extract_version.outputs.version }}.
             Commit: ${{ github.sha }}
           draft: false
-          prerelease: false # Set to true if these are pre-releases
+          prerelease: false
           files: |
-            ./gut-punch-exec.exe
-            ./jobs.zip
+            ./${{ steps.exec_name.outputs.name }}.zip

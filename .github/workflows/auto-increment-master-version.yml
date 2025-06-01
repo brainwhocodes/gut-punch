@@ -1,0 +1,124 @@
+name: Auto Increment Master Version
+
+on:
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: write # Required to commit and push changes to package.json and pnpm-lock.yaml
+
+jobs:
+  increment_version:
+    runs-on: ubuntu-latest
+    # Prevent workflow from running on commits made by this workflow's GITHUB_TOKEN
+    if: github.actor != 'github-actions[bot]'
+    env:
+      NODE_ENV: production
+
+    steps:
+      - name: Checkout master branch
+        uses: actions/checkout@v4
+        with:
+          ref: master
+          token: ${{ secrets.GITHUB_TOKEN }} # GITHUB_TOKEN commits don't trigger new workflows by default
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 10
+
+      - name: Configure Git
+        run: |
+          git config user.name "GitHub Actions Bot"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Install Dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Project
+        run: pnpm build
+        env:
+          NODE_ENV: production
+
+      - name: Calculate New Semantic Version
+        id: versioning
+        run: |
+          if [ ! -f package.json ]; then
+            echo "package.json not found!"
+            exit 1
+          fi
+          CURRENT_VERSION=$(jq -r .version package.json)
+          if [ -z "$CURRENT_VERSION" ] || [ "$CURRENT_VERSION" == "null" ]; then
+            echo "Version not found or is null in package.json. Cannot increment."
+            exit 1
+          fi
+          
+          echo "Current version: $CURRENT_VERSION"
+
+          if ! [[ "$CURRENT_VERSION" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            echo "Version '$CURRENT_VERSION' is not in X.Y.Z format."
+            exit 1
+          fi
+          
+          MAJOR=${BASH_REMATCH[1]}
+          MINOR=${BASH_REMATCH[2]}
+          PATCH=${BASH_REMATCH[3]}
+
+          # Increment patch version
+          PATCH=$((PATCH + 1))
+
+          # Check for patch version rollover
+          if [ "$PATCH" -ge 50 ]; then
+            PATCH=0
+            MINOR=$((MINOR + 1))
+            
+            # Check for minor version rollover
+            if [ "$MINOR" -ge 10 ]; then
+              MINOR=0
+              MAJOR=$((MAJOR + 1))
+            fi
+          fi
+
+          NEW_VERSION="$MAJOR.$MINOR.$PATCH"
+          echo "New version: $NEW_VERSION"
+
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Update package.json
+        run: |
+          # Use jq to update the version in package.json
+          # Creating a temporary file is a safe way to modify JSON in-place with jq
+          jq --arg new_ver "${{ steps.versioning.outputs.new_version }}" '.version = $new_ver' package.json > package.json.tmp && mv package.json.tmp package.json
+          echo "Updated package.json to version ${{ steps.versioning.outputs.new_version }}"
+
+      - name: Update pnpm-lock.yaml
+        run: |
+          # This command updates pnpm-lock.yaml based on the new version in package.json
+          # and any potential changes to dependency resolution if applicable.
+          pnpm install --frozen-lockfile=false
+          echo "Updated pnpm-lock.yaml"
+
+      - name: Check for changes
+        id: check_changes
+        run: |
+          # Check if git status reports any changes to package.json or pnpm-lock.yaml
+          if git diff --quiet HEAD -- package.json pnpm-lock.yaml; then
+            echo "No version changes to commit."
+            echo "changed=false" >> $GITHUB_OUTPUT
+          else
+            echo "Version changes detected in package.json or pnpm-lock.yaml."
+            echo "changed=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Commit and push changes
+        if: steps.check_changes.outputs.changed == 'true'
+        run: |
+          git add package.json pnpm-lock.yaml
+          git commit -m "chore(version): auto-increment master version to ${{ steps.versioning.outputs.new_version }}"
+          git push origin master
