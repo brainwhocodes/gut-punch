@@ -6,7 +6,7 @@ on:
       - master
 
 permissions:
-  contents: write # Required to commit and push changes to package.json and pnpm-lock.yaml
+  contents: write # Required to commit and push changes to package.json and bun.lockb
 
 jobs:
   increment_version:
@@ -23,15 +23,10 @@ jobs:
           ref: master
           token: ${{ secrets.GITHUB_TOKEN }} # GITHUB_TOKEN commits don't trigger new workflows by default
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
         with:
-          node-version: '20'
-
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v3
-        with:
-          version: 10
+          bun-version: latest
 
       - name: Configure Git
         run: |
@@ -39,10 +34,10 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Install Dependencies
-        run: pnpm install --frozen-lockfile
+        run: bun install --frozen-lockfile
 
       - name: Build Project
-        run: pnpm build
+        run: bun run build
         env:
           NODE_ENV: production
 
@@ -97,28 +92,27 @@ jobs:
           jq --arg new_ver "${{ steps.versioning.outputs.new_version }}" '.version = $new_ver' package.json > package.json.tmp && mv package.json.tmp package.json
           echo "Updated package.json to version ${{ steps.versioning.outputs.new_version }}"
 
-      - name: Update pnpm-lock.yaml
+      - name: Update bun.lockb
         run: |
-          # This command updates pnpm-lock.yaml based on the new version in package.json
-          # and any potential changes to dependency resolution if applicable.
-          pnpm install --frozen-lockfile=false
-          echo "Updated pnpm-lock.yaml"
+          # This command updates bun.lockb based on the new version in package.json
+          bun install
+          echo "Updated bun.lockb"
 
       - name: Check for changes
         id: check_changes
         run: |
-          # Check if git status reports any changes to package.json or pnpm-lock.yaml
-          if git diff --quiet HEAD -- package.json pnpm-lock.yaml; then
+          # Check if git status reports any changes to package.json or bun.lockb
+          if git diff --quiet HEAD -- package.json bun.lockb; then
             echo "No version changes to commit."
             echo "changed=false" >> $GITHUB_OUTPUT
           else
-            echo "Version changes detected in package.json or pnpm-lock.yaml."
+            echo "Version changes detected in package.json or bun.lockb."
             echo "changed=true" >> $GITHUB_OUTPUT
           fi
 
       - name: Commit and push changes
         if: steps.check_changes.outputs.changed == 'true'
         run: |
-          git add package.json pnpm-lock.yaml
+          git add package.json bun.lockb
           git commit -m "chore(version): auto-increment master version to ${{ steps.versioning.outputs.new_version }}"
           git push origin master
