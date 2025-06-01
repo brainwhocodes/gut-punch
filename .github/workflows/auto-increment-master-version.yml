@@ -6,7 +6,7 @@ on:
       - master
 
 permissions:
-  contents: write # Required to commit and push changes to package.json and bun.lockb
+  contents: write # Required to commit and push changes to package.json and bun.lock
 
 jobs:
   increment_version:
@@ -92,27 +92,27 @@ jobs:
           jq --arg new_ver "${{ steps.versioning.outputs.new_version }}" '.version = $new_ver' package.json > package.json.tmp && mv package.json.tmp package.json
           echo "Updated package.json to version ${{ steps.versioning.outputs.new_version }}"
 
-      - name: Update bun.lockb
+      - name: Update bun.lock
         run: |
-          # This command updates bun.lockb based on the new version in package.json
+          # This command updates bun.lock based on the new version in package.json
           bun install
-          echo "Updated bun.lockb"
+          echo "Updated bun.lock"
 
       - name: Check for changes
         id: check_changes
         run: |
-          # Check if git status reports any changes to package.json or bun.lockb
-          if git diff --quiet HEAD -- package.json bun.lockb; then
+          # Check if git status reports any changes to package.json or bun.lock
+          if git diff --quiet HEAD -- package.json bun.lock; then
             echo "No version changes to commit."
             echo "changed=false" >> $GITHUB_OUTPUT
           else
-            echo "Version changes detected in package.json or bun.lockb."
+            echo "Version changes detected in package.json or bun.lock."
             echo "changed=true" >> $GITHUB_OUTPUT
           fi
 
       - name: Commit and push changes
         if: steps.check_changes.outputs.changed == 'true'
         run: |
-          git add package.json bun.lockb
+          git add package.json bun.lock
           git commit -m "chore(version): auto-increment master version to ${{ steps.versioning.outputs.new_version }}"
           git push origin master
