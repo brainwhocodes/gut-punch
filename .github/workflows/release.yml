@@ -72,12 +72,40 @@ jobs:
         if: matrix.os != 'windows-latest'
         run: zip ./${{ steps.exec_name.outputs.name }}.zip ./${{ steps.exec_name.outputs.name }}
 
+      - name: Upload executable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gutpunch-cli-${{ matrix.os }}
+          path: ./${{ steps.exec_name.outputs.name }}.zip
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: build-and-release
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release-v')
+
+    permissions:
+      contents: write # Required to create releases
+
+    steps:
+      - name: Extract version from branch
+        id: extract_version
+        run: |
+          BRANCH_NAME="${{ github.ref_name }}"
+          VERSION=${BRANCH_NAME#release-v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+        shell: bash
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./release-artifacts # Download all artifacts to this directory
+          # No specific name, so it downloads all artifacts from the workflow run
+
+      - name: List downloaded files # For debugging purposes
+        run: ls -R ./release-artifacts
+
       - name: Create GitHub Release
-        # This step will run for each OS in the matrix, but only the first one that successfully creates the release will actually create it.
-        # Subsequent runs for other OSs will attempt to update the existing release with their assets.
-        # To avoid multiple release creations/overwrites, consider a separate job for release creation that depends on all build jobs.
-        # For now, this uses softprops/action-gh-release's ability to append files if the release already exists.
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release-v')
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.extract_version.outputs.version }}
@@ -88,4 +116,6 @@ jobs:
           draft: false
           prerelease: false
           files: |
-            ./${{ steps.exec_name.outputs.name }}.zip
+            ./release-artifacts/gutpunch-cli-windows-latest/*.zip
+            ./release-artifacts/gutpunch-cli-ubuntu-latest/*.zip
+            ./release-artifacts/gutpunch-cli-macos-latest/*.zip
