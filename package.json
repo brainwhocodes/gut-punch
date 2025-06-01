@@ -1,6 +1,6 @@
 {
   "name": "gut-punch",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "Class-first, modular job scheduler for Node.js (TypeScript)",
   "main": "dist/gut-punch.cjs",
