@@ -36,11 +36,6 @@ jobs:
       - name: Install Dependencies
         run: bun install --frozen-lockfile
 
-      - name: Build Project
-        run: bun run build
-        env:
-          NODE_ENV: production
-
       - name: Calculate New Semantic Version
         id: versioning
         run: |
@@ -85,18 +80,22 @@ jobs:
 
           echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
 
-      - name: Update package.json
+      - name: Update package.json and bun.lock
         run: |
-          # Use jq to update the version in package.json
-          # Creating a temporary file is a safe way to modify JSON in-place with jq
           jq --arg new_ver "${{ steps.versioning.outputs.new_version }}" '.version = $new_ver' package.json > package.json.tmp && mv package.json.tmp package.json
           echo "Updated package.json to version ${{ steps.versioning.outputs.new_version }}"
-
-      - name: Update bun.lock
-        run: |
-          # This command updates bun.lock based on the new version in package.json
           bun install
           echo "Updated bun.lock"
+
+      - name: Commit and Push Changes
+        run: |
+          git add package.json bun.lock
+          if ! git diff --staged --quiet; then
+            git commit -m "ci: auto-increment version to ${{ steps.versioning.outputs.new_version }}"
+            git push origin master
+          else
+            echo "No version changes to commit."
+          fi
 
       - name: Check for changes
         id: check_changes
