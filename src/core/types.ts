@@ -28,8 +28,8 @@ export interface Job {
  */
 export interface JobResult {
   status: JobRunStatus;
-  output?: unknown;
-  error?: string;
+  output?: Record<string, any> | null;
+  error?: string | undefined;
 }
 
 /**
