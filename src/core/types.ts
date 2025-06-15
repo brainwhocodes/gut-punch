@@ -42,11 +42,13 @@ export type BackoffStrategy = "exponential" | "linear" | "none";
  * information needed to execute it.
  */
 export interface JobDefinition {
+  /** Unique job name */
+  readonly name: string;
   /** Constructor of the job class for in-process execution. */
-  ctor: new () => Job;
+  readonly ctor: new () => Job;
   /** Whether to automatically reschedule after completion */
   readonly reschedule?: boolean;
-  /** Delay in milliseconds before automatic reschedule */
+    /** Delay in milliseconds before automatic reschedule */
   readonly rescheduleIn?: number;
   /** Run the job logic */
   run(params?: Record<string, unknown>): Promise<JobResult>;

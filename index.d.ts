@@ -69,6 +69,8 @@ export type BackoffStrategy = "exponential" | "linear" | "none";
  * information needed to execute it.
  */
 export interface JobDefinition {
+  /** Unique job name */
+  readonly name: string;
   /** Constructor of the job class for in-process execution. */
   ctor: new () => Job;
   /** Whether to automatically reschedule after completion */
