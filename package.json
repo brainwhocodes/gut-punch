@@ -1,6 +1,6 @@
 {
   "name": "gut-punch",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "type": "module",
   "description": "Job definitions and core types for GutPunch",
   "main": "index.mjs",
