@@ -1,8 +1,35 @@
 /**
- * Shared types and interfaces for Gut Punch scheduler
+ * GutPunch Job Library Type Definitions
  */
 
-import { JobRunStatus } from "./enums"; // Import the correct enum
+/**
+ * Job Run Statuses
+ */
+export declare enum JobRunStatus {
+  Pending = 0,
+  Running = 1,
+  Success = 2,
+  Failed = 3,
+  Retrying = 4
+}
+
+/**
+ * Queue Priorities
+ */
+export declare enum QueuePriority {
+  High = 0,
+  Default = 1,
+  Low = 2
+}
+
+/**
+ * Job Definition Statuses
+ */
+export declare enum JobDefinitionStatus {
+  Pending = 0,
+  Active = 1,
+  Disabled = 2
+}
 
 /**
  * Interface for a job class.
