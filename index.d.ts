@@ -83,6 +83,8 @@ export interface JobDefinition {
   readonly maxRetries?: number;
   /** Optional: Backoff strategy */
   readonly backoffStrategy?: BackoffStrategy;
+  /** Optional: Run the job in-process */
+  runInProcess?: boolean;
   /** The absolute path to the job's executable TypeScript file. */
   filePath?: string;
   /** The queue this job should run in. Defaults to 'default'. */
